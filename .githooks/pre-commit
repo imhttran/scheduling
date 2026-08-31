@@ -1,0 +1,16 @@
+#!/bin/sh
+# Runs on every commit once activated (`git config core.hooksPath .githooks`).
+# Fast checks only — no e2e here.
+set -e
+
+echo "→ backend: build + vet"
+(cd backend && go build ./... && go vet ./...)
+
+echo "→ backend: go test (DB integration tests skip without TEST_DATABASE_URL)"
+(cd backend && go test ./...)
+
+echo "→ frontend: typecheck"
+(cd frontend && npx tsc --noEmit)
+
+echo "→ prettier check"
+npx prettier --check . --ignore-path .gitignore

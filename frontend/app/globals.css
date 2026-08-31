@@ -1,0 +1,489 @@
+:root {
+  color-scheme: light;
+
+  /* UT Austin navy scale — anchored on the reference image's deep navy #001020 */
+  --navy-950: #000a14;
+  --navy-900: #001020;
+  --navy-800: #061729;
+  --navy-700: #0b2030;
+  --navy-600: #12304a;
+  --navy-500: #1b4260;
+  --navy-400: #2e5a7a;
+  --navy-300: #5a7e99;
+  --navy-200: #9fb8c9;
+  --navy-100: #d3e0e8;
+  --navy-50: #eef3f6;
+
+  /* UT Austin burnt-orange scale — primary is the official #BF5700 */
+  --orange-800: #8a3d00;
+  --orange-700: #9e4700;
+  --orange-600: #b04a0a;
+  --orange-500: #bf5700;
+  --orange-400: #d06a1f;
+  --orange-300: #e08a4f;
+  --orange-200: #f0b98f;
+  --orange-100: #f8dcc4;
+  --orange-50: #fcf1e6;
+
+  /* Semantic tokens */
+  --bg-color: #fafaf7; /* warm off-white, reference image top */
+  --surface-color: #ffffff;
+  --raised-color: #f4f1ec;
+  --text-color: var(--navy-700);
+  --text-muted: var(--navy-300);
+  --placeholder-color: var(--navy-200);
+  --border-color: #e3e0da;
+  --primary-color: var(--orange-500);
+  --primary-hover: var(--orange-700);
+  --on-primary: #ffffff;
+  --danger-color: #b3261e;
+  --danger-hover: #9c1f18;
+  --focus-ring: rgba(191, 87, 0, 0.25);
+  --card-shadow:
+    0 1px 2px rgba(6, 23, 41, 0.06), 0 8px 24px -8px rgba(6, 23, 41, 0.18);
+
+  /* Reference image background: warm off-white fading to deep navy */
+  --bg-gradient: linear-gradient(
+    180deg,
+    #fafaf7 0%,
+    #eef3f6 35%,
+    #9fb8c9 60%,
+    #061729 100%
+  );
+}
+
+/* Dark variant — same navy/orange brand, navy surfaces instead of white. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg-color: #061729;
+    --surface-color: #0b2030;
+    --raised-color: #12304a;
+    --text-color: #eef3f6;
+    --text-muted: #9fb8c9;
+    --placeholder-color: #5a7e99;
+    --border-color: #1b4260;
+    --primary-color: var(--orange-500);
+    --primary-hover: var(--orange-400);
+    --on-primary: #ffffff;
+    --danger-color: #ff6b5e;
+    --danger-hover: #ff8a7a;
+    --focus-ring: rgba(191, 87, 0, 0.4);
+    --card-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -8px rgba(0, 0, 0, 0.6);
+    --bg-gradient: linear-gradient(
+      180deg,
+      #0b2030 0%,
+      #061729 45%,
+      #000a14 100%
+    );
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  background: var(--bg-gradient);
+  background-attachment: fixed;
+  color: var(--text-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+/* Login & Signup Styles */
+.login-container {
+  width: 100%;
+  max-width: 400px;
+  padding: 20px;
+}
+
+.login-form {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  text-align: center;
+}
+
+.login-form h1 {
+  font-size: 1.875rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.login-form p {
+  color: var(--text-muted);
+  margin-bottom: 2rem;
+}
+
+.input-group {
+  text-align: left;
+  margin-bottom: 1.5rem;
+}
+
+.input-group label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.input-group input {
+  width: 100%;
+  padding: 0.75rem;
+  background-color: var(--raised-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 1rem;
+  transition:
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.input-group input::placeholder {
+  color: var(--placeholder-color);
+}
+
+.input-group input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.login-button {
+  width: 100%;
+  padding: 0.75rem;
+  background-color: var(--primary-color);
+  color: var(--on-primary);
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background-color 150ms,
+    transform 150ms;
+}
+
+.login-button:hover {
+  background-color: var(--primary-hover);
+}
+
+.login-button:active {
+  transform: scale(0.96);
+}
+
+.form-footer {
+  margin-top: 1.5rem;
+  font-size: 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.form-footer a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.form-footer a:hover {
+  text-decoration: underline;
+}
+
+.form-footer p {
+  color: var(--text-muted);
+}
+
+/* Dashboard Styles */
+/* Reusable page header */
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.page-header h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.page-header p {
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+
+.logout-link {
+  color: var(--danger-color);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: color 150ms;
+}
+
+.logout-link:hover {
+  color: var(--danger-hover);
+  text-decoration: underline;
+}
+
+/* Reusable page footer: quiet, small, muted — it should read as an
+   afterthought, not a section. */
+.page-footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 0 4px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.page-footer .highlight {
+  color: var(--text-color);
+}
+
+.page-footer .footer-version {
+  margin-left: auto;
+}
+
+.dashboard-container {
+  width: 100%;
+  max-width: 600px;
+  padding: 20px;
+  transition: max-width 150ms;
+}
+
+/* Widened for staff/admin, whose user table needs more room than the plain
+   client view. min() keeps it from overflowing narrow viewports. */
+.dashboard-container.wide {
+  max-width: min(1100px, 95vw);
+}
+
+.dashboard-card {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  text-align: center;
+}
+
+.highlight {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.user-list-section {
+  margin-top: 2rem;
+  text-align: left;
+}
+
+.add-user-toggle {
+  color: var(--primary-color);
+  cursor: pointer;
+  font-weight: 500;
+  width: fit-content;
+}
+
+.add-user-toggle:hover {
+  color: var(--primary-hover);
+}
+
+.add-user-form {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.add-user-form input {
+  flex: 1;
+  padding: 0.6rem;
+  background-color: var(--raised-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.add-user-form .login-button {
+  width: auto;
+  padding: 0.6rem 1rem;
+}
+
+/* Horizontal scroll instead of blowing out the page layout when the table
+   (4 columns + action buttons) is wider than the viewport, e.g. on mobile. */
+.table-scroll {
+  overflow-x: auto;
+}
+
+.user-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+
+.user-table th,
+.user-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.user-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.user-table th.sortable:hover {
+  color: var(--primary-color);
+}
+
+.user-table tbody tr:hover {
+  background: var(--raised-color);
+}
+
+/* No wrap: the actions cell stays one row and the table scrolls horizontally
+   (.table-scroll) instead — flex-wrap here would make the table auto-layout
+   algorithm size this column to its min-content, squeezing four buttons into
+   a tall single-column stack instead of the intended horizontal scroll. */
+.user-table td:last-child {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.user-table td button:not(.link-button) {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--primary-color);
+  color: var(--on-primary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.user-table td button:not(.link-button):hover {
+  background-color: var(--primary-hover);
+}
+
+/* Verified/Unverified status doubling as its own toggle, styled like a plain
+   text link rather than a pill button so it reads as a status, not an action. */
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--primary-color);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  color: var(--primary-hover);
+}
+
+.actions-trigger {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background-color: var(--primary-color);
+  color: var(--on-primary);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.actions-trigger:hover {
+  background-color: var(--primary-hover);
+}
+
+/* Actions dropdown (2+ actions): a real popover (native Popover API), not an
+   inline-expanding element. It renders in the browser's top layer, so it's
+   never clipped by .table-scroll's overflow and — unlike a <details> that
+   expands in place — never pushes the table's rows/columns around when
+   opened. Outside-click and Escape-to-close come for free from the platform.
+   Position (top/left) is set from the trigger's bounding rect. */
+.actions-menu-list[popover] {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 6px;
+  min-width: 160px;
+  background: var(--raised-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-color);
+}
+
+.actions-menu-list[popover]:popover-open {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.actions-menu-list button {
+  text-align: left;
+}
+
+/* Delete stays red inside the menu, just as a link instead of a filled pill. */
+.actions-menu-list .link-button.button-danger {
+  background: none;
+  color: var(--danger-color);
+}
+
+.actions-menu-list .link-button.button-danger:hover {
+  background: none;
+  color: var(--danger-hover);
+}
+
+.user-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.user-pager button {
+  padding: 4px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--raised-color);
+  color: var(--text-color);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.user-pager button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.user-pager button:not(:disabled):hover {
+  background-color: var(--primary-color);
+}
+
+/* Danger (destructive) button */
+.button-danger {
+  background-color: var(--danger-color);
+}
+
+.button-danger:hover {
+  background-color: var(--danger-hover);
+}

@@ -1,0 +1,6 @@
+{
+  "type": "module",
+  "devDependencies": {
+    "prettier": "^3.9.6"
+  }
+}
