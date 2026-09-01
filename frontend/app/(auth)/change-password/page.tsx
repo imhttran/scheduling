@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { confirmedPasswordOrAlert, submitAuthedForm } from "@/lib/api";
+import { confirmedPasswordOrAlert, submitAuthedForm } from "@/lib/forms";
 import { PageTitle } from "@/components/PageTitle";
 
 export default function ChangePasswordPage() {

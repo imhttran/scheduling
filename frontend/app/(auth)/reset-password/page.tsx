@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { confirmedPasswordOrAlert, submitForm } from "@/lib/api";
+import { confirmedPasswordOrAlert, submitForm } from "@/lib/forms";
 import { PageTitle } from "@/components/PageTitle";
 
 export default function ResetPasswordPage() {

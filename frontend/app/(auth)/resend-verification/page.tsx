@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { submitEmailForm } from "@/lib/api";
+import { submitEmailForm } from "@/lib/forms";
 import { PageTitle } from "@/components/PageTitle";
 
 export default function ResendVerificationPage() {

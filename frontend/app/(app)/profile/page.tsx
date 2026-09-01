@@ -1,7 +1,7 @@
 "use client";
 
 import { type FormEvent } from "react";
-import { submitAuthedForm } from "@/lib/api";
+import { submitAuthedForm } from "@/lib/forms";
 import { COUNTRIES, US_STATES } from "@/lib/usStates";
 import { PageTitle } from "@/components/PageTitle";
 

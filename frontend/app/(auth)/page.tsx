@@ -8,7 +8,7 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
-import { confirmedPasswordOrAlert, submitForm } from "@/lib/api";
+import { confirmedPasswordOrAlert, submitForm } from "@/lib/forms";
 import { PageTitle } from "@/components/PageTitle";
 
 type LoginResult = { token: string; twoFactorRequired?: boolean };
