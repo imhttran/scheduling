@@ -455,6 +455,35 @@ func deptInCallerLocation(w http.ResponseWriter, r *http.Request, deptID int) bo
 	return true
 }
 
+// Writes a 403 (and returns false) unless the schedule request's shift is in
+// the caller's location. Admins are exempt (they manage everything).
+func requestInCallerLocation(w http.ResponseWriter, r *http.Request, reqID int) bool {
+	u := currentUser(r)
+	if hasRole(u.Role, "admin") {
+		return true
+	}
+	locID, err := managerLocationID(r.Context(), u.ID)
+	if err != nil {
+		respond500(w, "Location Error", err, false)
+		return false
+	}
+	var ok bool
+	if err := db.QueryRow(r.Context(), `
+		SELECT EXISTS (
+			SELECT 1 FROM schedule_requests r
+			JOIN workqueue w ON w.id = r.workqueue_id
+			JOIN departments d ON d.id = w.department_id
+			WHERE r.id = $1 AND d.location_id = $2)`, reqID, locID).Scan(&ok); err != nil {
+		respond500(w, "Location Error", err, false)
+		return false
+	}
+	if !ok {
+		respond(w, http.StatusForbidden, msg("Request not in your location"))
+		return false
+	}
+	return true
+}
+
 // Default operating hours for a new job: weekdays 9am-5pm (8h each, 40h/wk)
 // and weekends 10h each (20h/wk). Used when a job is created without explicit
 // schedules.
@@ -1213,6 +1242,9 @@ func approveRequest(w http.ResponseWriter, r *http.Request) {
 		respond500(w, "Approve Request Error", err, false)
 		return
 	}
+	if !requestInCallerLocation(w, r, targetID(r)) {
+		return
+	}
 	// miss: return the shift to the workqueue. overflow: assign it to the student.
 	if typ == "miss" {
 		_, err = db.Exec(r.Context(),
@@ -1273,6 +1305,9 @@ func approveRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func denyRequest(w http.ResponseWriter, r *http.Request) {
+	if !requestInCallerLocation(w, r, targetID(r)) {
+		return
+	}
 	tag, err := db.Exec(r.Context(),
 		`UPDATE schedule_requests SET status = 'denied' WHERE id = $1 AND status = 'pending'`, targetID(r))
 	if err != nil {

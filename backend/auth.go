@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -294,24 +295,40 @@ func login(w http.ResponseWriter, r *http.Request) {
 	decodeJSON(r, &body)
 	identifier := strings.TrimSpace(body.Email)
 
-	// Rate limit: reject if this identifier is currently locked out.
-	var lockedUntil *time.Time
-	_ = db.QueryRow(r.Context(),
-		`SELECT locked_until FROM login_attempts WHERE identifier = $1`, identifier).Scan(&lockedUntil)
-	if lockedUntil != nil && time.Now().Before(*lockedUntil) {
-		respond(w, http.StatusTooManyRequests, fail(http.StatusTooManyRequests,
-			"Too many failed attempts. Try again later."))
-		return
-	}
-
+	// Resolve the account (email or UID) so the lockout is keyed on the account
+	// rather than the identifier string — otherwise alternating email/UID would
+	// reset the attempt counter and bypass the lockout.
 	var id int
 	var email, storedHash string
 	var verified bool
 	err := db.QueryRow(r.Context(),
 		`SELECT id, email, password, email_verified FROM users WHERE email = $1 OR uid = $1`, identifier).
 		Scan(&id, &email, &storedHash, &verified)
-	if err != nil || !verifyPassword(body.Password, storedHash) {
-		// Record the failure; lock the identifier after the max attempts.
+	notFound := errors.Is(err, pgx.ErrNoRows)
+	if err != nil && !notFound {
+		respond500(w, "Login Error", err, false)
+		return
+	}
+	// Lockout key: the account id when it exists, else the raw identifier (so
+	// unknown identifiers are still rate-limited). The "acct:" prefix keeps
+	// account keys from colliding with identifier keys.
+	key := identifier
+	if !notFound {
+		key = "acct:" + strconv.Itoa(id)
+	}
+
+	// Rate limit: reject if this key is currently locked out.
+	var lockedUntil *time.Time
+	_ = db.QueryRow(r.Context(),
+		`SELECT locked_until FROM login_attempts WHERE identifier = $1`, key).Scan(&lockedUntil)
+	if lockedUntil != nil && time.Now().Before(*lockedUntil) {
+		respond(w, http.StatusTooManyRequests, fail(http.StatusTooManyRequests,
+			"Too many failed attempts. Try again later."))
+		return
+	}
+
+	if notFound || !verifyPassword(body.Password, storedHash) {
+		// Record the failure; lock the key after the max attempts.
 		_, _ = db.Exec(r.Context(), `
 			INSERT INTO login_attempts (identifier, attempts, locked_until)
 			VALUES ($1, 1, NULL)
@@ -321,13 +338,13 @@ func login(w http.ResponseWriter, r *http.Request) {
 					WHEN login_attempts.attempts + 1 >= $2 THEN now() + make_interval(mins => $3)
 					ELSE login_attempts.locked_until END,
 				updated_at = now()`,
-			identifier, cfg.LoginMaxAttempts, cfg.LoginLockMinutes)
+			key, cfg.LoginMaxAttempts, cfg.LoginLockMinutes)
 		respond(w, http.StatusUnauthorized, fail(http.StatusUnauthorized, "Invalid email or password"))
 		return
 	}
 	// Successful password — clear any prior failures.
 	_, _ = db.Exec(r.Context(),
-		`DELETE FROM login_attempts WHERE identifier = $1`, identifier)
+		`DELETE FROM login_attempts WHERE identifier = $1`, key)
 	if verificationRequired() && !verified {
 		respond(w, http.StatusForbidden, fail(http.StatusForbidden, "Please verify your email before logging in."))
 		return
