@@ -10,6 +10,7 @@ import { JobModal, type JobInput } from "@/components/JobModal";
 import { hasRole } from "@/lib/roles";
 import { useSortablePage } from "@/lib/pagination";
 import { DataGrid, type Column } from "@/components/DataGrid";
+import type { Department, Job, Preference, Request, Shift } from "@/lib/types";
 
 type StudentJob = {
   jobId: number;
@@ -32,64 +33,6 @@ type Student = {
   weekHoursCap: number;
   weekHoursUsed: number;
   jobs: StudentJob[];
-};
-
-type JobSchedule = {
-  dayOfWeek: number;
-  startTime: string;
-  endTime: string;
-  hours: number;
-};
-type JobHoliday = {
-  date: string;
-  reason?: string | null;
-};
-type Job = {
-  id: number;
-  name: string;
-  departmentId: number;
-  departmentName: string;
-  locationId: number;
-  locationName: string;
-  optimalWorkers: number;
-  currentWorkers: number;
-  weeklyHours: number;
-  schedules: JobSchedule[];
-  holidays: JobHoliday[];
-};
-
-type Shift = {
-  id: number;
-  departmentName: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  status: string;
-  assignedUserId: number | null;
-  assignedEmail: string | null;
-};
-
-type Preference = {
-  dayOfWeek: number;
-  startTime: string;
-  endTime: string;
-};
-
-type Department = {
-  id: number;
-  name: string;
-  locationId: number;
-  locationName: string;
-};
-
-type Request = {
-  id: number;
-  email: string;
-  date: string;
-  startTime: string;
-  endTime: string;
-  type: string;
-  reason: string | null;
 };
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

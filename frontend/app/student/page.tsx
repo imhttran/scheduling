@@ -14,31 +14,7 @@ import { PageTitle } from "@/components/PageTitle";
 import { MissRequestModal } from "@/components/MissRequestModal";
 import { DataGrid, type Column } from "@/components/DataGrid";
 import { usePager, useSortablePage } from "@/lib/pagination";
-
-type Shift = {
-  id: number;
-  date: string;
-  startTime: string;
-  endTime: string;
-  departmentName: string;
-};
-
-type Request = {
-  id: number;
-  workqueueId: number;
-  date: string;
-  startTime: string;
-  endTime: string;
-  type: string;
-  status: string;
-  reason: string | null;
-};
-
-type Preference = {
-  dayOfWeek: number;
-  startTime: string;
-  endTime: string;
-};
+import type { Preference, Request, Shift } from "@/lib/types";
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 

@@ -8,25 +8,7 @@ import { PageTitle } from "@/components/PageTitle";
 import { MissRequestModal } from "@/components/MissRequestModal";
 import { DataGrid, type Column } from "@/components/DataGrid";
 import { useSortablePage } from "@/lib/pagination";
-
-type Shift = {
-  id: number;
-  date: string;
-  startTime: string;
-  endTime: string;
-  departmentName: string;
-};
-
-type Request = {
-  id: number;
-  workqueueId: number;
-  date: string;
-  startTime: string;
-  endTime: string;
-  type: string;
-  status: string;
-  reason: string | null;
-};
+import type { Request, Shift } from "@/lib/types";
 
 const hoursBetween = (start: string, end: string) => {
   const [sh, sm] = start.split(":").map(Number);

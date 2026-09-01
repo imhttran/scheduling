@@ -16,6 +16,7 @@ import { Modal } from "@/components/Modal";
 import { JobModal, type JobInput } from "@/components/JobModal";
 import { useSortablePage } from "@/lib/pagination";
 import { DataGrid, type Column } from "@/components/DataGrid";
+import type { Department, Job } from "@/lib/types";
 
 type Location = {
   id: number;
@@ -29,36 +30,6 @@ type Location = {
   country?: string | null;
   managerId?: number | null;
   managerEmail?: string | null;
-};
-type Department = {
-  id: number;
-  name: string;
-  departmentCode?: string | null;
-  locationId: number;
-  locationName: string;
-};
-type JobSchedule = {
-  dayOfWeek: number;
-  startTime: string;
-  endTime: string;
-  hours: number;
-};
-type JobHoliday = {
-  date: string;
-  reason?: string | null;
-};
-type Job = {
-  id: number;
-  name: string;
-  departmentId: number;
-  departmentName: string;
-  locationId: number;
-  locationName: string;
-  optimalWorkers: number;
-  currentWorkers: number;
-  weeklyHours: number;
-  schedules: JobSchedule[];
-  holidays: JobHoliday[];
 };
 type User = {
   id: number;
