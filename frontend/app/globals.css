@@ -326,14 +326,23 @@ body {
     text-align: center;
 }
 
-/* Left sidebar nav + content, used on the admin/manager pages. */
+.page-header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 4px;
+}
+
+/* Right sidebar nav + content, used on the admin/manager pages. */
 .with-sidebar {
     display: flex;
+    flex-direction: row-reverse;
     gap: 20px;
     align-items: flex-start;
 }
 
-.with-sidebar .dashboard-card {
+.with-sidebar .dashboard-card,
+.cal-content {
     flex: 1;
     min-width: 0;
 }
@@ -358,6 +367,15 @@ body {
     color: var(--text-color);
     text-decoration: none;
     font-size: 0.875rem;
+}
+
+.sidebar .logout-link {
+    color: var(--danger-color);
+}
+
+.sidebar .logout-link:hover {
+    color: var(--danger-hover);
+    background: var(--raised-color);
 }
 
 .sidebar a:hover {

@@ -299,188 +299,198 @@ export default function SchedulerCalendarPage() {
       <PageTitle title="Coverage Calendar" />
       <PageHeader
         title="Coverage Calendar"
-        subtitle={
+        right={
           <>
             Welcome, <span className="highlight">{email}</span>
           </>
         }
-      >
-        <a className="page-nav-link" href="/manager">
-          Back to schedule
-        </a>
-        <a className="logout-link" href="/" onClick={logout}>
-          Logout
-        </a>
-      </PageHeader>
-
-      <div className="res-filter">
-        {workers.map(([id, name]) => {
-          const active = !hiddenWorkers.has(id);
-          return (
-            <button
-              key={id}
-              type="button"
-              className={`res-filter-chip${active ? "" : " off"}`}
-              onClick={() => toggleWorker(id)}
-              aria-pressed={active}
-            >
-              <span
-                className="res-filter-swatch"
-                style={{ background: colorFor(id) }}
-              />
-              {name}
-            </button>
-          );
-        })}
-        <button
-          type="button"
-          className={`res-filter-chip${hideOpen ? " off" : ""}`}
-          onClick={() => setHideOpen((v) => !v)}
-          aria-pressed={!hideOpen}
-        >
-          <span className="res-filter-swatch res-filter-open" />
-          Open
-        </button>
-      </div>
-
-      <ResourceCalendar
-        shifts={visibleShifts}
-        anchor={anchor}
-        onMove={move}
-        onToday={goToday}
-        emptyText="No shifts scheduled this week."
-        renderShift={(s, style) => {
-          const shift = s as Shift;
-          const open = shift.assignedUserId === 0;
-          const color = colorFor(shift.assignedUserId);
-          const content = (
-            <>
-              <span className="cal-shift-time">
-                {fmtTime(shift.startTime)}–{fmtTime(shift.endTime)}
-              </span>
-              {open && <span className="cal-shift-dept">Assign…</span>}
-            </>
-          );
-          if (open) {
-            return (
-              <button
-                key={shift.id}
-                type="button"
-                className="cal-shift cal-shift-open"
-                style={style}
-                onClick={() => openAssign(shift)}
-                title="Assign a worker to this shift"
-              >
-                {content}
-              </button>
-            );
-          }
-          return (
-            <button
-              key={shift.id}
-              type="button"
-              className="cal-shift"
-              style={{
-                ...style,
-                background: `color-mix(in srgb, ${color} 12%, transparent)`,
-                borderColor: `color-mix(in srgb, ${color} 40%, transparent)`,
-                borderLeftColor: color,
-              }}
-              onClick={() => openAssign(shift)}
-              title={`${shift.assignedName} — click to reassign`}
-            >
-              {content}
-            </button>
-          );
-        }}
       />
 
-      {assigning && (
-        <Modal
-          title={assigning.assignedUserId ? "Reassign Shift" : "Assign Shift"}
-          onClose={() => setAssigning(null)}
-        >
-          <form className="modal-form" onSubmit={submitAssign}>
-            <p className="section-hint">
-              {assigning.date} · {assigning.startTime}–{assigning.endTime} ·{" "}
-              {assigning.departmentName}
-            </p>
-            {eligibleStudents.length === 0 && (
-              <p className="section-hint">
-                No other workers available (all at their weekly hour cap).
-              </p>
-            )}
-            <select
-              name="userId"
-              value={selectedId}
-              onChange={(e) => setSelectedId(Number(e.target.value))}
-            >
-              <option value="">Unassigned</option>
-              {eligibleStudents.map((st) => (
-                <option key={st.id} value={st.id}>
-                  {st.name || st.email} ({st.weekHoursUsed}/{st.weekHoursCap}h)
-                </option>
-              ))}
-            </select>
-            {selectedId > 0 && assigning.assignedUserId === 0 && (
-              <>
-                <div className="modal-label">Coverage blocks</div>
-                <div className="block-grid">
-                  {blocks.map((b) => {
-                    const checked = selectedBlocks.has(b.start);
-                    return (
-                      <label
-                        key={b.start}
-                        className={`block-btn${b.taken ? " taken" : ""}${!b.taken && checked ? " selected" : ""}`}
-                        title={
-                          b.taken ? "Already assigned" : "Assign this block"
-                        }
-                      >
-                        <input
-                          type="checkbox"
-                          disabled={b.taken}
-                          checked={checked}
-                          onChange={() => toggleBlock(b.start)}
-                        />
-                        <span>
-                          {fmtTime(b.start)}–{fmtTime(b.end)}
-                        </span>
-                        {b.taken && <span className="block-taken">taken</span>}
-                      </label>
-                    );
-                  })}
-                </div>
+      <div className="with-sidebar">
+        <nav className="sidebar">
+          <a href="/manager">Back to schedule</a>
+          <a className="logout-link" href="/" onClick={logout}>
+            Logout
+          </a>
+        </nav>
+        <div className="cal-content">
+          <div className="res-filter">
+            {workers.map(([id, name]) => {
+              const active = !hiddenWorkers.has(id);
+              return (
                 <button
+                  key={id}
                   type="button"
-                  className="block-btn whole"
-                  onClick={() =>
-                    setSelectedBlocks(new Set(openBlocks.map((b) => b.start)))
-                  }
+                  className={`res-filter-chip${active ? "" : " off"}`}
+                  onClick={() => toggleWorker(id)}
+                  aria-pressed={active}
                 >
-                  Take whole shift
+                  <span
+                    className="res-filter-swatch"
+                    style={{ background: colorFor(id) }}
+                  />
+                  {name}
                 </button>
-                <span className="section-hint">
-                  {selectedBlocks.size > 0
-                    ? `Covers ${selectedBlocks.size} block${selectedBlocks.size > 1 ? "s" : ""} (${assignHours}h); the rest stays open.`
-                    : "Pick one or more blocks, or take the whole shift."}
-                </span>
-              </>
-            )}
-            {selectedId > 0 && assigning.assignedUserId !== 0 && (
-              <p className="section-hint">
-                Reassigns the entire shift to the selected worker.
-              </p>
-            )}
+              );
+            })}
             <button
-              type="submit"
-              className="login-button"
-              disabled={!canSubmit}
+              type="button"
+              className={`res-filter-chip${hideOpen ? " off" : ""}`}
+              onClick={() => setHideOpen((v) => !v)}
+              aria-pressed={!hideOpen}
             >
-              {assigning.assignedUserId ? "Reassign" : "Assign"}
+              <span className="res-filter-swatch res-filter-open" />
+              Open
             </button>
-          </form>
-        </Modal>
-      )}
+          </div>
+
+          <ResourceCalendar
+            shifts={visibleShifts}
+            anchor={anchor}
+            onMove={move}
+            onToday={goToday}
+            emptyText="No shifts scheduled this week."
+            renderShift={(s, style) => {
+              const shift = s as Shift;
+              const open = shift.assignedUserId === 0;
+              const color = colorFor(shift.assignedUserId);
+              const content = (
+                <>
+                  <span className="cal-shift-time">
+                    {fmtTime(shift.startTime)}–{fmtTime(shift.endTime)}
+                  </span>
+                  {open && <span className="cal-shift-dept">Assign…</span>}
+                </>
+              );
+              if (open) {
+                return (
+                  <button
+                    key={shift.id}
+                    type="button"
+                    className="cal-shift cal-shift-open"
+                    style={style}
+                    onClick={() => openAssign(shift)}
+                    title="Assign a worker to this shift"
+                  >
+                    {content}
+                  </button>
+                );
+              }
+              return (
+                <button
+                  key={shift.id}
+                  type="button"
+                  className="cal-shift"
+                  style={{
+                    ...style,
+                    background: `color-mix(in srgb, ${color} 12%, transparent)`,
+                    borderColor: `color-mix(in srgb, ${color} 40%, transparent)`,
+                    borderLeftColor: color,
+                  }}
+                  onClick={() => openAssign(shift)}
+                  title={`${shift.assignedName} — click to reassign`}
+                >
+                  {content}
+                </button>
+              );
+            }}
+          />
+
+          {assigning && (
+            <Modal
+              title={
+                assigning.assignedUserId ? "Reassign Shift" : "Assign Shift"
+              }
+              onClose={() => setAssigning(null)}
+            >
+              <form className="modal-form" onSubmit={submitAssign}>
+                <p className="section-hint">
+                  {assigning.date} · {assigning.startTime}–{assigning.endTime} ·{" "}
+                  {assigning.departmentName}
+                </p>
+                {eligibleStudents.length === 0 && (
+                  <p className="section-hint">
+                    No other workers available (all at their weekly hour cap).
+                  </p>
+                )}
+                <select
+                  name="userId"
+                  value={selectedId}
+                  onChange={(e) => setSelectedId(Number(e.target.value))}
+                >
+                  <option value="">Unassigned</option>
+                  {eligibleStudents.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {st.name || st.email} ({st.weekHoursUsed}/
+                      {st.weekHoursCap}h)
+                    </option>
+                  ))}
+                </select>
+                {selectedId > 0 && assigning.assignedUserId === 0 && (
+                  <>
+                    <div className="modal-label">Coverage blocks</div>
+                    <div className="block-grid">
+                      {blocks.map((b) => {
+                        const checked = selectedBlocks.has(b.start);
+                        return (
+                          <label
+                            key={b.start}
+                            className={`block-btn${b.taken ? " taken" : ""}${!b.taken && checked ? " selected" : ""}`}
+                            title={
+                              b.taken ? "Already assigned" : "Assign this block"
+                            }
+                          >
+                            <input
+                              type="checkbox"
+                              disabled={b.taken}
+                              checked={checked}
+                              onChange={() => toggleBlock(b.start)}
+                            />
+                            <span>
+                              {fmtTime(b.start)}–{fmtTime(b.end)}
+                            </span>
+                            {b.taken && (
+                              <span className="block-taken">taken</span>
+                            )}
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <button
+                      type="button"
+                      className="block-btn whole"
+                      onClick={() =>
+                        setSelectedBlocks(
+                          new Set(openBlocks.map((b) => b.start)),
+                        )
+                      }
+                    >
+                      Take whole shift
+                    </button>
+                    <span className="section-hint">
+                      {selectedBlocks.size > 0
+                        ? `Covers ${selectedBlocks.size} block${selectedBlocks.size > 1 ? "s" : ""} (${assignHours}h); the rest stays open.`
+                        : "Pick one or more blocks, or take the whole shift."}
+                    </span>
+                  </>
+                )}
+                {selectedId > 0 && assigning.assignedUserId !== 0 && (
+                  <p className="section-hint">
+                    Reassigns the entire shift to the selected worker.
+                  </p>
+                )}
+                <button
+                  type="submit"
+                  className="login-button"
+                  disabled={!canSubmit}
+                >
+                  {assigning.assignedUserId ? "Reassign" : "Assign"}
+                </button>
+              </form>
+            </Modal>
+          )}
+        </div>
+      </div>
 
       <PageFooter meta={<span>Scheduler calendar</span>} />
     </div>

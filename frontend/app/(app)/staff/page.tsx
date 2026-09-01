@@ -159,51 +159,54 @@ export default function StaffPage() {
       <PageTitle title="My Work Schedule" />
       <PageHeader
         title="My Work Schedule"
-        subtitle={
+        right={
           <>
             Welcome, <span className="highlight">{email}</span>
           </>
         }
-      >
-        <a className="logout-link" href="/" onClick={logout}>
-          Logout
-        </a>
-      </PageHeader>
+      />
 
-      <div className="dashboard-card">
-        <div className="user-list-section">
-          <h2>
-            My Calendar{" "}
-            <span className="highlight">
-              ({weeklyHours} / {weekHoursCap} hrs this week)
-            </span>
-          </h2>
-          <DataGrid
-            grid={calendarGrid}
-            columns={myCalendarColumns}
-            getRowKey={(s) => s.id}
-            emptyText="No shifts scheduled this week."
-          />
-        </div>
+      <div className="with-sidebar">
+        <nav className="sidebar">
+          <a className="logout-link" href="/" onClick={logout}>
+            Logout
+          </a>
+        </nav>
+        <div className="dashboard-card">
+          <div className="user-list-section">
+            <h2>
+              My Calendar{" "}
+              <span className="highlight">
+                ({weeklyHours} / {weekHoursCap} hrs this week)
+              </span>
+            </h2>
+            <DataGrid
+              grid={calendarGrid}
+              columns={myCalendarColumns}
+              getRowKey={(s) => s.id}
+              emptyText="No shifts scheduled this week."
+            />
+          </div>
 
-        <div className="user-list-section">
-          <h2>Workqueue</h2>
-          <DataGrid
-            grid={workqueueGrid}
-            columns={workqueueColumns}
-            getRowKey={(s) => s.id}
-            emptyText="No open shifts in your department."
-          />
-        </div>
+          <div className="user-list-section">
+            <h2>Workqueue</h2>
+            <DataGrid
+              grid={workqueueGrid}
+              columns={workqueueColumns}
+              getRowKey={(s) => s.id}
+              emptyText="No open shifts in your department."
+            />
+          </div>
 
-        <div className="user-list-section">
-          <h2>My Requests</h2>
-          <DataGrid
-            grid={requestsGrid}
-            columns={requestColumns}
-            getRowKey={(r) => r.id}
-            emptyText="No requests yet."
-          />
+          <div className="user-list-section">
+            <h2>My Requests</h2>
+            <DataGrid
+              grid={requestsGrid}
+              columns={requestColumns}
+              getRowKey={(r) => r.id}
+              emptyText="No requests yet."
+            />
+          </div>
         </div>
       </div>
 

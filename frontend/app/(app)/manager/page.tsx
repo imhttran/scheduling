@@ -471,26 +471,23 @@ export default function ManagerPage() {
       <PageTitle title="Manager" />
       <PageHeader
         title="Manager"
-        subtitle={
+        right={
           <>
             Welcome, <span className="highlight">{email}</span>
           </>
         }
-      >
-        <a className="page-nav-link" href="/scheduler/calendar">
-          Calendar view
-        </a>
-        <a className="logout-link" href="/" onClick={logout}>
-          Logout
-        </a>
-      </PageHeader>
+      />
 
       <div className="with-sidebar">
         <nav className="sidebar">
+          <a href="/scheduler/calendar">Calendar view</a>
           <a href="#students">Workers</a>
           <a href="#jobs">Job Requirements</a>
           <a href="#workqueue">Workqueue</a>
           <a href="#requests">Requests</a>
+          <a className="logout-link" href="/" onClick={logout}>
+            Logout
+          </a>
         </nav>
         <div className="dashboard-card">
           <div className="user-list-section" id="students">

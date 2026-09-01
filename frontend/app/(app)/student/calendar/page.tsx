@@ -89,38 +89,41 @@ export default function CalendarPage() {
       <PageTitle title="My Calendar" />
       <PageHeader
         title="My Calendar"
-        subtitle={
+        right={
           <>
             Welcome, <span className="highlight">{email}</span>
           </>
         }
-      >
-        <a className="page-nav-link" href="/student">
-          Back to schedule
-        </a>
-        <a className="logout-link" href="/" onClick={logout}>
-          Logout
-        </a>
-      </PageHeader>
-
-      <WeekCalendar
-        shifts={shifts}
-        anchor={anchor}
-        onMove={move}
-        onToday={goToday}
-        emptyText="No shifts scheduled this week."
-        renderShift={(s, style) => {
-          const shift = s as Shift;
-          return (
-            <div key={shift.id} className="cal-shift" style={style}>
-              <span className="cal-shift-time">
-                {fmtTime(shift.startTime)}–{fmtTime(shift.endTime)}
-              </span>
-              <span className="cal-shift-dept">{shift.departmentName}</span>
-            </div>
-          );
-        }}
       />
+
+      <div className="with-sidebar">
+        <nav className="sidebar">
+          <a href="/student">Back to schedule</a>
+          <a className="logout-link" href="/" onClick={logout}>
+            Logout
+          </a>
+        </nav>
+        <div className="cal-content">
+          <WeekCalendar
+            shifts={shifts}
+            anchor={anchor}
+            onMove={move}
+            onToday={goToday}
+            emptyText="No shifts scheduled this week."
+            renderShift={(s, style) => {
+              const shift = s as Shift;
+              return (
+                <div key={shift.id} className="cal-shift" style={style}>
+                  <span className="cal-shift-time">
+                    {fmtTime(shift.startTime)}–{fmtTime(shift.endTime)}
+                  </span>
+                  <span className="cal-shift-dept">{shift.departmentName}</span>
+                </div>
+              );
+            }}
+          />
+        </div>
+      </div>
 
       <PageFooter meta={<span>Student calendar</span>} />
     </div>

@@ -196,79 +196,80 @@ export default function StudentPage() {
       <PageTitle title="My Schedule" />
       <PageHeader
         title="My Schedule"
-        subtitle={
+        right={
           <>
             Welcome, <span className="highlight">{email}</span>
           </>
         }
-      >
-        <a className="page-nav-link" href="/student/calendar">
-          Calendar view
-        </a>
-        <a className="logout-link" href="/" onClick={logout}>
-          Logout
-        </a>
-      </PageHeader>
+      />
 
-      <div className="dashboard-card">
-        <div className="user-list-section">
-          <h2>
-            My Calendar{" "}
-            <span className="highlight">
-              ({weeklyHours} / 20 hrs this week)
-            </span>
-          </h2>
-          <DataGrid
-            grid={calendarGrid}
-            columns={myCalendarColumns}
-            getRowKey={(s) => s.id}
-            emptyText="No shifts scheduled this week."
-          />
-        </div>
-
-        <div className="user-list-section">
-          <h2>Workqueue</h2>
-          <DataGrid
-            grid={workqueueGrid}
-            columns={workqueueColumns}
-            getRowKey={(s) => s.id}
-            emptyText="No open shifts in your department."
-          />
-        </div>
-
-        <div className="user-list-section">
-          <h2>My Requests</h2>
-          <DataGrid
-            grid={requestsGrid}
-            columns={requestColumns}
-            getRowKey={(r) => r.id}
-            emptyText="No requests yet."
-          />
-        </div>
-
-        <div className="user-list-section">
-          <h2>Preferred Days &amp; Times</h2>
-          {preferences.length > 0 && (
+      <div className="with-sidebar">
+        <nav className="sidebar">
+          <a href="/student/calendar">Calendar view</a>
+          <a className="logout-link" href="/" onClick={logout}>
+            Logout
+          </a>
+        </nav>
+        <div className="dashboard-card">
+          <div className="user-list-section">
+            <h2>
+              My Calendar{" "}
+              <span className="highlight">
+                ({weeklyHours} / 20 hrs this week)
+              </span>
+            </h2>
             <DataGrid
-              grid={preferencesGrid}
-              columns={prefColumns}
-              getRowKey={(p) => p.dayOfWeek}
+              grid={calendarGrid}
+              columns={myCalendarColumns}
+              getRowKey={(s) => s.id}
+              emptyText="No shifts scheduled this week."
             />
-          )}
-          <form className="add-user-form" onSubmit={handlePreference}>
-            <select name="dayOfWeek" defaultValue="1">
-              {DAYS.map((d, i) => (
-                <option key={i} value={i}>
-                  {d}
-                </option>
-              ))}
-            </select>
-            <input type="time" name="startTime" required />
-            <input type="time" name="endTime" required />
-            <button type="submit" className="login-button">
-              Add
-            </button>
-          </form>
+          </div>
+
+          <div className="user-list-section">
+            <h2>Workqueue</h2>
+            <DataGrid
+              grid={workqueueGrid}
+              columns={workqueueColumns}
+              getRowKey={(s) => s.id}
+              emptyText="No open shifts in your department."
+            />
+          </div>
+
+          <div className="user-list-section">
+            <h2>My Requests</h2>
+            <DataGrid
+              grid={requestsGrid}
+              columns={requestColumns}
+              getRowKey={(r) => r.id}
+              emptyText="No requests yet."
+            />
+          </div>
+
+          <div className="user-list-section">
+            <h2>Preferred Days &amp; Times</h2>
+            {preferences.length > 0 && (
+              <DataGrid
+                grid={preferencesGrid}
+                columns={prefColumns}
+                getRowKey={(p) => p.dayOfWeek}
+              />
+            )}
+            <form className="add-user-form" onSubmit={handlePreference}>
+              <select name="dayOfWeek" defaultValue="1">
+                {DAYS.map((d, i) => (
+                  <option key={i} value={i}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+              <input type="time" name="startTime" required />
+              <input type="time" name="endTime" required />
+              <button type="submit" className="login-button">
+                Add
+              </button>
+            </form>
+          </div>
         </div>
       </div>
 

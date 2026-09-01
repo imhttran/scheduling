@@ -468,16 +468,12 @@ export default function AdminPage() {
       <PageTitle title="Admin" />
       <PageHeader
         title="Admin"
-        subtitle={
+        right={
           <>
             Welcome, <span className="highlight">{email}</span>
           </>
         }
-      >
-        <a className="logout-link" href="/" onClick={logout}>
-          Logout
-        </a>
-      </PageHeader>
+      />
 
       <div className="with-sidebar">
         <nav className="sidebar">
@@ -485,6 +481,9 @@ export default function AdminPage() {
           <a href="#departments">Departments</a>
           <a href="#jobs">Jobs</a>
           <a href="#access-control">Access Control</a>
+          <a className="logout-link" href="/" onClick={logout}>
+            Logout
+          </a>
         </nav>
         <div className="dashboard-card">
           <div className="user-list-section" id="locations">
