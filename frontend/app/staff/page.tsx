@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { API_BASE, callApi } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { callApi } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
 import { PageFooter } from "@/components/PageFooter";
 import { PageTitle } from "@/components/PageTitle";
@@ -26,31 +26,23 @@ type Request = {
   reason: string | null;
 };
 
-type Preference = {
-  dayOfWeek: number;
-  startTime: string;
-  endTime: string;
-};
-
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
 const hoursBetween = (start: string, end: string) => {
   const [sh, sm] = start.split(":").map(Number);
   const [eh, em] = end.split(":").map(Number);
   return (eh * 60 + em - (sh * 60 + sm)) / 60;
 };
 
-export default function StudentPage() {
+export default function StaffPage() {
   const [token, setToken] = useState<string | null>(null);
   const [email, setEmail] = useState("");
+  const [weekHoursCap, setWeekHoursCap] = useState(20);
   const [calendar, setCalendar] = useState<Shift[]>([]);
   const [workqueue, setWorkqueue] = useState<Shift[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
-  const [preferences, setPreferences] = useState<Preference[]>([]);
   const [missShift, setMissShift] = useState<Shift | null>(null);
 
   const load = useCallback(async (authToken: string) => {
-    const [cal, wq, req, prefs] = await Promise.all([
+    const [cal, wq, req] = await Promise.all([
       callApi<{ calendar: Shift[] }>(
         authToken,
         "/api/me/calendar",
@@ -72,18 +64,10 @@ export default function StudentPage() {
         undefined,
         false,
       ),
-      callApi<{ preferences: Preference[] }>(
-        authToken,
-        "/api/me/preferences",
-        "GET",
-        undefined,
-        false,
-      ),
     ]);
     if (cal) setCalendar(cal.calendar ?? []);
     if (wq) setWorkqueue(wq.workqueue ?? []);
     if (req) setRequests(req.requests ?? []);
-    if (prefs) setPreferences(prefs.preferences ?? []);
   }, []);
 
   useEffect(() => {
@@ -94,23 +78,20 @@ export default function StudentPage() {
         return;
       }
       setToken(stored);
-      const me = await callApi<{ user: { email: string; role: string } }>(
-        stored,
-        "/api/me",
-        "GET",
-        undefined,
-        false,
-      );
+      const me = await callApi<{
+        user: { email: string; role: string; weekHoursCap?: number };
+      }>(stored, "/api/me", "GET", undefined, false);
       if (!me) {
         localStorage.removeItem("auth_token");
         window.location.href = "/";
         return;
       }
-      if (me.user.role !== "student") {
+      if (me.user.role !== "staff") {
         window.location.href = "/dashboard";
         return;
       }
       setEmail(me.user.email);
+      if (me.user.weekHoursCap) setWeekHoursCap(me.user.weekHoursCap);
       await load(stored);
     })();
   }, [load]);
@@ -121,17 +102,6 @@ export default function StudentPage() {
       const result = await callApi(token, path, "POST", body);
       if (result) await load(token);
     })();
-  };
-
-  const handlePreference = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    act("/api/me/preferences", {
-      dayOfWeek: Number(data.get("dayOfWeek")),
-      startTime: data.get("startTime"),
-      endTime: data.get("endTime"),
-    });
-    event.currentTarget.reset();
   };
 
   const logout = (event: { preventDefault: () => void }) => {
@@ -147,9 +117,9 @@ export default function StudentPage() {
 
   return (
     <div className="dashboard-container wide">
-      <PageTitle title="My Schedule" />
+      <PageTitle title="My Work Schedule" />
       <PageHeader
-        title="My Schedule"
+        title="My Work Schedule"
         subtitle={
           <>
             Welcome, <span className="highlight">{email}</span>
@@ -166,7 +136,7 @@ export default function StudentPage() {
           <h2>
             My Calendar{" "}
             <span className="highlight">
-              ({weeklyHours} / 20 hrs this week)
+              ({weeklyHours} / {weekHoursCap} hrs this week)
             </span>
           </h2>
           <div className="table-scroll">
@@ -294,49 +264,9 @@ export default function StudentPage() {
             </table>
           </div>
         </div>
-
-        <div className="user-list-section">
-          <h2>Preferred Days &amp; Times</h2>
-          {preferences.length > 0 && (
-            <div className="table-scroll">
-              <table className="user-table">
-                <thead>
-                  <tr>
-                    <th>Day</th>
-                    <th>Start</th>
-                    <th>End</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {preferences.map((p, i) => (
-                    <tr key={i}>
-                      <td>{DAYS[p.dayOfWeek]}</td>
-                      <td>{p.startTime}</td>
-                      <td>{p.endTime}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <form className="add-user-form" onSubmit={handlePreference}>
-            <select name="dayOfWeek" defaultValue="1">
-              {DAYS.map((d, i) => (
-                <option key={i} value={i}>
-                  {d}
-                </option>
-              ))}
-            </select>
-            <input type="time" name="startTime" required />
-            <input type="time" name="endTime" required />
-            <button type="submit" className="login-button">
-              Add
-            </button>
-          </form>
-        </div>
       </div>
 
-      <PageFooter meta={<span>Student schedule</span>} />
+      <PageFooter meta={<span>Staff schedule</span>} />
 
       <MissRequestModal
         shift={missShift}

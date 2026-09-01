@@ -194,8 +194,8 @@ func newRouter() http.Handler {
 			r.With(requireRole("admin")).Post("/departments", createDepartment)
 			r.With(requireRole("admin"), parseID).Patch("/departments/{id}", updateDepartment)
 			r.With(requireRole("manager")).Get("/jobs", listJobs)
-			r.With(requireRole("manager")).Post("/jobs", createJob)
-			r.With(requireRole("manager"), parseID).Patch("/jobs/{id}", updateJob)
+			r.With(requireRoleIn("manager", "admin")).Post("/jobs", createJob)
+			r.With(requireRoleIn("manager", "admin"), parseID).Patch("/jobs/{id}", updateJob)
 			r.With(requireRole("admin"), parseID).Post("/users/{id}/disable", setDisabled(true))
 			r.With(requireRole("admin"), parseID).Post("/users/{id}/enable", setDisabled(false))
 			r.With(requireRole("admin"), parseID).Post("/managers/{id}/assign", assignManager)
@@ -217,6 +217,7 @@ func newRouter() http.Handler {
 			r.With(parseID).Post("/workqueue/{id}/pick", pickShift)
 			r.Get("/me/requests", myRequests)
 			r.Post("/me/requests", createRequest)
+			r.With(parseID).Post("/me/requests/{id}/cancel", cancelRequest)
 			r.Get("/me/preferences", myPreferences)
 			r.Post("/me/preferences", addPreference)
 		})
@@ -334,6 +335,22 @@ func requireRole(minRole string) func(http.Handler) http.Handler {
 				return
 			}
 			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// Allows only the given roles (exact match) — for cases where the linear
+// hierarchy doesn't fit, e.g. job management is manager/admin but not scheduler.
+func requireRoleIn(roles ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			for _, role := range roles {
+				if currentUser(r).Role == role {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			respond(w, http.StatusForbidden, msg("Insufficient permissions"))
 		})
 	}
 }

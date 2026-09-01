@@ -49,6 +49,7 @@ func main() {
 	seedWorkqueue(ctx)
 	seedStudentAvailability(ctx)
 	seedStudentShifts(ctx)
+	seedStaff(ctx)
 	seedRequests(ctx)
 	seedJobHolidays(ctx)
 	seedWeeklySchedules(ctx)

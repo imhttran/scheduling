@@ -1364,6 +1364,21 @@ func myWorkqueue(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusOK, map[string]any{"workqueue": []map[string]any{}})
 		return
 	}
+	// Only surface open shifts if the worker still has weekly hours left.
+	wt, hl, err := workerSettings(r.Context(), u.ID)
+	if err != nil {
+		respond500(w, "Workqueue Error", err, false)
+		return
+	}
+	used, err := workerWeekHours(r.Context(), u.ID, time.Now())
+	if err != nil {
+		respond500(w, "Workqueue Error", err, false)
+		return
+	}
+	if used >= workerPolicyFor(wt, hl).cap {
+		respond(w, http.StatusOK, map[string]any{"workqueue": []map[string]any{}})
+		return
+	}
 	rows, err := db.Query(r.Context(), `
 		SELECT w.id, w.date, w.start_time, w.end_time, d.name
 		FROM workqueue w JOIN departments d ON d.id = w.department_id
@@ -1374,6 +1389,7 @@ func myWorkqueue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer rows.Close()
+	remaining := workerPolicyFor(wt, hl).cap - used
 	workqueue := []map[string]any{}
 	for rows.Next() {
 		var id int
@@ -1382,6 +1398,10 @@ func myWorkqueue(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&id, &date, &start, &end, &dept); err != nil {
 			respond500(w, "Workqueue Error", err, false)
 			return
+		}
+		// Only show shifts the worker can actually take without exceeding their cap.
+		if hoursBetween(start, end) > remaining {
+			continue
 		}
 		workqueue = append(workqueue, map[string]any{
 			"id": id, "date": date.Format("2006-01-02"), "startTime": start, "endTime": end, "departmentName": dept,
@@ -1509,6 +1529,23 @@ func myRequests(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	respond(w, http.StatusOK, map[string]any{"requests": requests})
+}
+
+// A worker cancels their own pending request.
+func cancelRequest(w http.ResponseWriter, r *http.Request) {
+	u := currentUser(r)
+	tag, err := db.Exec(r.Context(),
+		`UPDATE schedule_requests SET status = 'cancelled' WHERE id = $1 AND user_id = $2 AND status = 'pending'`,
+		targetID(r), u.ID)
+	if err != nil {
+		respond500(w, "Cancel Request Error", err, false)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		respond(w, http.StatusNotFound, msg("Pending request not found"))
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Request cancelled"})
 }
 
 func createRequest(w http.ResponseWriter, r *http.Request) {

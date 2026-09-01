@@ -127,10 +127,11 @@ func seedFromCSV(ctx context.Context) {
 		}
 
 		switch role {
-		case "student":
+		case "student", "staff":
 			if deptID != 0 {
 				// Ensure a job exists for this department (default: named after it),
-				// then assign the student to it.
+				// then assign the worker to it so they see the workqueue and can be
+				// assigned shifts.
 				var jobID int
 				err := db.QueryRow(ctx,
 					`SELECT id FROM jobs WHERE department_id = $1 LIMIT 1`, deptID).Scan(&jobID)
@@ -380,6 +381,106 @@ func seedStudentShifts(ctx context.Context) {
 	}
 }
 
+// Dev-only: gives the seeded staff account a job and assigns open shifts until
+// they're near their weekly cap, so the staff screen has a fuller calendar.
+func seedStaff(ctx context.Context) {
+	if cfg.Env != "development" {
+		return
+	}
+	var staffID int
+	err := db.QueryRow(ctx, `SELECT id FROM users WHERE email = 'staff@mail.com'`).Scan(&staffID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return
+	}
+	if err != nil {
+		log.Printf("[seed] staff: %v", err)
+		return
+	}
+
+	// Ensure the staff has a job so they see the workqueue.
+	var deptID int
+	err = db.QueryRow(ctx, `
+		SELECT j.department_id FROM student_jobs sj JOIN jobs j ON j.id = sj.job_id
+		WHERE sj.user_id = $1 LIMIT 1`, staffID).Scan(&deptID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		var jobID int
+		err = db.QueryRow(ctx, `
+			INSERT INTO jobs (name, department_id)
+			SELECT 'Staff Work', id FROM departments ORDER BY id LIMIT 1
+			RETURNING id`).Scan(&jobID)
+		if err != nil {
+			log.Printf("[seed] staff job: %v", err)
+			return
+		}
+		if err := insertDefaultJobSchedules(ctx, jobID); err != nil {
+			log.Printf("[seed] staff job schedules: %v", err)
+		}
+		if _, err := db.Exec(ctx, `
+			INSERT INTO student_jobs (user_id, job_id, min_hours, max_hours)
+			VALUES ($1, $2, 0, 40)`, staffID, jobID); err != nil {
+			log.Printf("[seed] staff job assignment: %v", err)
+			return
+		}
+		_ = db.QueryRow(ctx, `SELECT department_id FROM jobs WHERE id = $1`, jobID).Scan(&deptID)
+	} else if err != nil {
+		log.Printf("[seed] staff: %v", err)
+		return
+	}
+
+	// Assign open shifts until the staff is near their weekly cap.
+	if deptID != 0 {
+		used, err := workerWeekHours(ctx, staffID, time.Now())
+		if err != nil {
+			log.Printf("[seed] staff hours: %v", err)
+			return
+		}
+		rows, err := db.Query(ctx, `
+			SELECT id, start_time, end_time FROM workqueue
+			WHERE status = 'open' AND department_id = $1
+			ORDER BY date, start_time`, deptID)
+		if err != nil {
+			log.Printf("[seed] staff shifts: %v", err)
+			return
+		}
+		type openShift struct {
+			id         int
+			start, end string
+		}
+		var open []openShift
+		for rows.Next() {
+			var s openShift
+			if err := rows.Scan(&s.id, &s.start, &s.end); err != nil {
+				rows.Close()
+				log.Printf("[seed] staff shifts: %v", err)
+				return
+			}
+			open = append(open, s)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			log.Printf("[seed] staff shifts: %v", err)
+			return
+		}
+		rand.Shuffle(len(open), func(i, j int) { open[i], open[j] = open[j], open[i] })
+		for _, s := range open {
+			hours := hoursBetween(s.start, s.end)
+			if used+hours > 20 {
+				continue
+			}
+			if _, err := db.Exec(ctx,
+				`UPDATE workqueue SET status = 'assigned', assigned_user_id = $1 WHERE id = $2 AND status = 'open'`,
+				staffID, s.id); err != nil {
+				log.Printf("[seed] staff shifts: %v", err)
+				return
+			}
+			used += hours
+			if used >= 18 {
+				break
+			}
+		}
+	}
+}
+
 // Dev-only: seeds a few pending schedule_requests (miss/overflow) per student so
 // the manager approval view has data. Idempotent — students who already have
 // requests are skipped.
@@ -387,7 +488,7 @@ func seedRequests(ctx context.Context) {
 	if cfg.Env != "development" {
 		return
 	}
-	rows, err := db.Query(ctx, `SELECT id FROM users WHERE role = 'student'`)
+	rows, err := db.Query(ctx, `SELECT id FROM users WHERE role IN ('student','staff')`)
 	if err != nil {
 		log.Printf("[seed] requests: %v", err)
 		return

@@ -208,6 +208,10 @@ export default function DashboardPage() {
           window.location.href = "/student";
           return;
         }
+        if (user.role === "staff") {
+          window.location.href = "/staff";
+          return;
+        }
         if (user.role === "manager" || user.role === "scheduler") {
           window.location.href = "/manager";
           return;

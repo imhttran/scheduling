@@ -292,9 +292,9 @@ body {
 }
 
 /* Widened for staff/admin, whose user table needs more room than the plain
-   client view. min() keeps it from overflowing narrow viewports. */
+   client view. Fills the available screen width. */
 .dashboard-container.wide {
-    max-width: min(1100px, 95vw);
+    max-width: 100%;
 }
 
 .dashboard-card {

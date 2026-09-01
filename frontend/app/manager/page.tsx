@@ -104,6 +104,8 @@ export default function ManagerPage() {
 
   // Schedulers (and admins) can assign shifts to workers; managers set up jobs.
   const canAssign = hasRole(role, "scheduler");
+  // Managers and admins create/edit jobs; schedulers only view them.
+  const canManageJobs = role === "manager" || role === "admin";
 
   const STUDENTS_PER_PAGE = 10;
 
@@ -430,27 +432,29 @@ export default function ManagerPage() {
           <div className="user-list-section" id="jobs">
             <div className="section-title-row">
               <h2>Job Requirements</h2>
-              <button
-                type="button"
-                className="login-button add-button"
-                onClick={() =>
-                  setJobModal({
-                    id: 0,
-                    name: "",
-                    departmentId: 0,
-                    departmentName: "",
-                    locationId: 0,
-                    locationName: "",
-                    optimalWorkers: 1,
-                    currentWorkers: 0,
-                    weeklyHours: 0,
-                    schedules: [],
-                    holidays: [],
-                  })
-                }
-              >
-                Add Job
-              </button>
+              {canManageJobs && (
+                <button
+                  type="button"
+                  className="login-button add-button"
+                  onClick={() =>
+                    setJobModal({
+                      id: 0,
+                      name: "",
+                      departmentId: 0,
+                      departmentName: "",
+                      locationId: 0,
+                      locationName: "",
+                      optimalWorkers: 1,
+                      currentWorkers: 0,
+                      weeklyHours: 0,
+                      schedules: [],
+                      holidays: [],
+                    })
+                  }
+                >
+                  Add Job
+                </button>
+              )}
             </div>
             <p className="section-hint">
               Daily operating hours, the weekly hour requirement, and staff
@@ -496,9 +500,14 @@ export default function ManagerPage() {
                           {j.currentWorkers} / {j.optimalWorkers}
                         </td>
                         <td>
-                          <button type="button" onClick={() => setJobModal(j)}>
-                            Edit
-                          </button>
+                          {canManageJobs && (
+                            <button
+                              type="button"
+                              onClick={() => setJobModal(j)}
+                            >
+                              Edit
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -565,7 +574,8 @@ export default function ManagerPage() {
                                 <option value="">Unassigned</option>
                                 {students.map((st) => (
                                   <option key={st.id} value={st.id}>
-                                    {st.email}
+                                    {st.email} ({st.weekHoursUsed}/
+                                    {st.weekHoursCap}h)
                                   </option>
                                 ))}
                               </select>
@@ -589,7 +599,7 @@ export default function ManagerPage() {
               <table className="user-table">
                 <thead>
                   <tr>
-                    <th>Student</th>
+                    <th>Worker</th>
                     <th>Date</th>
                     <th>Time</th>
                     <th>Type</th>

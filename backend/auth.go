@@ -94,16 +94,21 @@ func randomToken() string {
 
 func me(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
+	user := map[string]any{
+		"id":                 u.ID,
+		"email":              u.Email,
+		"role":               u.Role,
+		"emailVerified":      u.EmailVerified,
+		"mustChangePassword": u.MustChangePassword,
+		"hasProfile":         u.HasProfile,
+	}
+	// Workers (students/staff) get their weekly-hour cap for the schedule view.
+	if wt, hl, err := workerSettings(r.Context(), u.ID); err == nil {
+		user["weekHoursCap"] = workerPolicyFor(wt, hl).cap
+	}
 	respond(w, http.StatusOK, map[string]any{
 		"message": "Welcome to the secret area!",
-		"user": map[string]any{
-			"id":                 u.ID,
-			"email":              u.Email,
-			"role":               u.Role,
-			"emailVerified":      u.EmailVerified,
-			"mustChangePassword": u.MustChangePassword,
-			"hasProfile":         u.HasProfile,
-		},
+		"user":    user,
 	})
 }
 
