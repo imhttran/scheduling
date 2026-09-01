@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PageFooter } from "@/components/PageFooter";
 import { PageTitle } from "@/components/PageTitle";
 import { MissRequestModal } from "@/components/MissRequestModal";
-import { Pager, usePager } from "@/lib/pagination";
+import { Pager, SortableTh, useSortablePage } from "@/lib/pagination";
 
 type Shift = {
   id: number;
@@ -146,9 +146,21 @@ export default function StudentPage() {
     0,
   );
 
-  const calendarPager = usePager<Shift>(calendar);
-  const workqueuePager = usePager<Shift>(workqueue);
-  const requestsPager = usePager<Request>(requests);
+  const calendarGrid = useSortablePage<Shift>(
+    calendar,
+    (s, key) => s[key as keyof Shift],
+    "date",
+  );
+  const workqueueGrid = useSortablePage<Shift>(
+    workqueue,
+    (s, key) => s[key as keyof Shift],
+    "date",
+  );
+  const requestsGrid = useSortablePage<Request>(
+    requests,
+    (r, key) => r[key as keyof Request],
+    "date",
+  );
 
   return (
     <div className="dashboard-container wide">
@@ -181,10 +193,34 @@ export default function StudentPage() {
             <table className="user-table">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Start</th>
-                  <th>End</th>
-                  <th>Department</th>
+                  <SortableTh
+                    label="Date"
+                    sortKey="date"
+                    sortBy={calendarGrid.sortBy}
+                    sortDir={calendarGrid.sortDir}
+                    onSort={() => calendarGrid.toggleSort("date")}
+                  />
+                  <SortableTh
+                    label="Start"
+                    sortKey="startTime"
+                    sortBy={calendarGrid.sortBy}
+                    sortDir={calendarGrid.sortDir}
+                    onSort={() => calendarGrid.toggleSort("startTime")}
+                  />
+                  <SortableTh
+                    label="End"
+                    sortKey="endTime"
+                    sortBy={calendarGrid.sortBy}
+                    sortDir={calendarGrid.sortDir}
+                    onSort={() => calendarGrid.toggleSort("endTime")}
+                  />
+                  <SortableTh
+                    label="Department"
+                    sortKey="departmentName"
+                    sortBy={calendarGrid.sortBy}
+                    sortDir={calendarGrid.sortDir}
+                    onSort={() => calendarGrid.toggleSort("departmentName")}
+                  />
                   <th></th>
                 </tr>
               </thead>
@@ -194,7 +230,7 @@ export default function StudentPage() {
                     <td colSpan={5}>No shifts scheduled this week.</td>
                   </tr>
                 ) : (
-                  calendarPager.pageItems.map((s) => (
+                  calendarGrid.pageItems.map((s) => (
                     <tr key={s.id}>
                       <td>{s.date}</td>
                       <td>{s.startTime}</td>
@@ -212,10 +248,10 @@ export default function StudentPage() {
             </table>
           </div>
           <Pager
-            pageCount={calendarPager.pageCount}
-            currentPage={calendarPager.currentPage}
-            onPrev={() => calendarPager.setPage(calendarPager.currentPage - 1)}
-            onNext={() => calendarPager.setPage(calendarPager.currentPage + 1)}
+            pageCount={calendarGrid.pageCount}
+            currentPage={calendarGrid.currentPage}
+            onPrev={() => calendarGrid.setPage(calendarGrid.currentPage - 1)}
+            onNext={() => calendarGrid.setPage(calendarGrid.currentPage + 1)}
           />
         </div>
 
@@ -225,10 +261,34 @@ export default function StudentPage() {
             <table className="user-table">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Start</th>
-                  <th>End</th>
-                  <th>Department</th>
+                  <SortableTh
+                    label="Date"
+                    sortKey="date"
+                    sortBy={workqueueGrid.sortBy}
+                    sortDir={workqueueGrid.sortDir}
+                    onSort={() => workqueueGrid.toggleSort("date")}
+                  />
+                  <SortableTh
+                    label="Start"
+                    sortKey="startTime"
+                    sortBy={workqueueGrid.sortBy}
+                    sortDir={workqueueGrid.sortDir}
+                    onSort={() => workqueueGrid.toggleSort("startTime")}
+                  />
+                  <SortableTh
+                    label="End"
+                    sortKey="endTime"
+                    sortBy={workqueueGrid.sortBy}
+                    sortDir={workqueueGrid.sortDir}
+                    onSort={() => workqueueGrid.toggleSort("endTime")}
+                  />
+                  <SortableTh
+                    label="Department"
+                    sortKey="departmentName"
+                    sortBy={workqueueGrid.sortBy}
+                    sortDir={workqueueGrid.sortDir}
+                    onSort={() => workqueueGrid.toggleSort("departmentName")}
+                  />
                   <th></th>
                 </tr>
               </thead>
@@ -238,7 +298,7 @@ export default function StudentPage() {
                     <td colSpan={5}>No open shifts in your department.</td>
                   </tr>
                 ) : (
-                  workqueuePager.pageItems.map((s) => (
+                  workqueueGrid.pageItems.map((s) => (
                     <tr key={s.id}>
                       <td>{s.date}</td>
                       <td>{s.startTime}</td>
@@ -259,14 +319,10 @@ export default function StudentPage() {
             </table>
           </div>
           <Pager
-            pageCount={workqueuePager.pageCount}
-            currentPage={workqueuePager.currentPage}
-            onPrev={() =>
-              workqueuePager.setPage(workqueuePager.currentPage - 1)
-            }
-            onNext={() =>
-              workqueuePager.setPage(workqueuePager.currentPage + 1)
-            }
+            pageCount={workqueueGrid.pageCount}
+            currentPage={workqueueGrid.currentPage}
+            onPrev={() => workqueueGrid.setPage(workqueueGrid.currentPage - 1)}
+            onNext={() => workqueueGrid.setPage(workqueueGrid.currentPage + 1)}
           />
         </div>
 
@@ -276,12 +332,48 @@ export default function StudentPage() {
             <table className="user-table">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Start</th>
-                  <th>End</th>
-                  <th>Type</th>
-                  <th>Status</th>
-                  <th>Reason</th>
+                  <SortableTh
+                    label="Date"
+                    sortKey="date"
+                    sortBy={requestsGrid.sortBy}
+                    sortDir={requestsGrid.sortDir}
+                    onSort={() => requestsGrid.toggleSort("date")}
+                  />
+                  <SortableTh
+                    label="Start"
+                    sortKey="startTime"
+                    sortBy={requestsGrid.sortBy}
+                    sortDir={requestsGrid.sortDir}
+                    onSort={() => requestsGrid.toggleSort("startTime")}
+                  />
+                  <SortableTh
+                    label="End"
+                    sortKey="endTime"
+                    sortBy={requestsGrid.sortBy}
+                    sortDir={requestsGrid.sortDir}
+                    onSort={() => requestsGrid.toggleSort("endTime")}
+                  />
+                  <SortableTh
+                    label="Type"
+                    sortKey="type"
+                    sortBy={requestsGrid.sortBy}
+                    sortDir={requestsGrid.sortDir}
+                    onSort={() => requestsGrid.toggleSort("type")}
+                  />
+                  <SortableTh
+                    label="Status"
+                    sortKey="status"
+                    sortBy={requestsGrid.sortBy}
+                    sortDir={requestsGrid.sortDir}
+                    onSort={() => requestsGrid.toggleSort("status")}
+                  />
+                  <SortableTh
+                    label="Reason"
+                    sortKey="reason"
+                    sortBy={requestsGrid.sortBy}
+                    sortDir={requestsGrid.sortDir}
+                    onSort={() => requestsGrid.toggleSort("reason")}
+                  />
                   <th></th>
                 </tr>
               </thead>
@@ -291,7 +383,7 @@ export default function StudentPage() {
                     <td colSpan={7}>No requests yet.</td>
                   </tr>
                 ) : (
-                  requestsPager.pageItems.map((r) => (
+                  requestsGrid.pageItems.map((r) => (
                     <tr key={r.id}>
                       <td>{r.date}</td>
                       <td>{r.startTime}</td>
@@ -318,10 +410,10 @@ export default function StudentPage() {
             </table>
           </div>
           <Pager
-            pageCount={requestsPager.pageCount}
-            currentPage={requestsPager.currentPage}
-            onPrev={() => requestsPager.setPage(requestsPager.currentPage - 1)}
-            onNext={() => requestsPager.setPage(requestsPager.currentPage + 1)}
+            pageCount={requestsGrid.pageCount}
+            currentPage={requestsGrid.currentPage}
+            onPrev={() => requestsGrid.setPage(requestsGrid.currentPage - 1)}
+            onNext={() => requestsGrid.setPage(requestsGrid.currentPage + 1)}
           />
         </div>
 

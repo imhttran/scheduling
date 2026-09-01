@@ -8,7 +8,7 @@ import { PageTitle } from "@/components/PageTitle";
 import { Modal } from "@/components/Modal";
 import { JobModal, type JobInput } from "@/components/JobModal";
 import { hasRole } from "@/lib/roles";
-import { Pager, SortableTh, usePager, useSortablePage } from "@/lib/pagination";
+import { Pager, SortableTh, useSortablePage } from "@/lib/pagination";
 
 type StudentJob = {
   jobId: number;
@@ -125,9 +125,24 @@ export default function ManagerPage() {
     (s) => s.email,
     "email",
   );
-  const jobsPager = usePager<Job>(jobs);
-  const shiftsPager = usePager<Shift>(shifts);
-  const requestsPager = usePager<Request>(requests);
+  const jobsGrid = useSortablePage<Job>(
+    jobs,
+    (j, key) => {
+      if (key === "workers") return j.currentWorkers;
+      return j[key as keyof Job];
+    },
+    "name",
+  );
+  const shiftsGrid = useSortablePage<Shift>(
+    shifts,
+    (sh, key) => sh[key as keyof Shift],
+    "date",
+  );
+  const requestsGrid = useSortablePage<Request>(
+    requests,
+    (r, key) => r[key as keyof Request],
+    "date",
+  );
 
   const load = useCallback(async (authToken: string) => {
     const [s, j, sh, d, r] = await Promise.all([
@@ -494,13 +509,37 @@ export default function ManagerPage() {
               <table className="user-table">
                 <thead>
                   <tr>
-                    <th>Job</th>
-                    <th>Department</th>
+                    <SortableTh
+                      label="Job"
+                      sortKey="name"
+                      sortBy={jobsGrid.sortBy}
+                      sortDir={jobsGrid.sortDir}
+                      onSort={() => jobsGrid.toggleSort("name")}
+                    />
+                    <SortableTh
+                      label="Department"
+                      sortKey="departmentName"
+                      sortBy={jobsGrid.sortBy}
+                      sortDir={jobsGrid.sortDir}
+                      onSort={() => jobsGrid.toggleSort("departmentName")}
+                    />
                     {DAYS.map((d) => (
                       <th key={d}>{d}</th>
                     ))}
-                    <th>Weekly</th>
-                    <th>Workers</th>
+                    <SortableTh
+                      label="Weekly"
+                      sortKey="weeklyHours"
+                      sortBy={jobsGrid.sortBy}
+                      sortDir={jobsGrid.sortDir}
+                      onSort={() => jobsGrid.toggleSort("weeklyHours")}
+                    />
+                    <SortableTh
+                      label="Workers"
+                      sortKey="workers"
+                      sortBy={jobsGrid.sortBy}
+                      sortDir={jobsGrid.sortDir}
+                      onSort={() => jobsGrid.toggleSort("workers")}
+                    />
                     <th></th>
                   </tr>
                 </thead>
@@ -510,7 +549,7 @@ export default function ManagerPage() {
                       <td colSpan={11}>No jobs in your location.</td>
                     </tr>
                   ) : (
-                    jobsPager.pageItems.map((j) => (
+                    jobsGrid.pageItems.map((j) => (
                       <tr key={j.id}>
                         <td>{j.name}</td>
                         <td>{j.departmentName}</td>
@@ -545,10 +584,10 @@ export default function ManagerPage() {
               </table>
             </div>
             <Pager
-              pageCount={jobsPager.pageCount}
-              currentPage={jobsPager.currentPage}
-              onPrev={() => jobsPager.setPage(jobsPager.currentPage - 1)}
-              onNext={() => jobsPager.setPage(jobsPager.currentPage + 1)}
+              pageCount={jobsGrid.pageCount}
+              currentPage={jobsGrid.currentPage}
+              onPrev={() => jobsGrid.setPage(jobsGrid.currentPage - 1)}
+              onNext={() => jobsGrid.setPage(jobsGrid.currentPage + 1)}
             />
           </div>
 
@@ -575,11 +614,41 @@ export default function ManagerPage() {
               <table className="user-table">
                 <thead>
                   <tr>
-                    <th>Department</th>
-                    <th>Date</th>
-                    <th>Time</th>
-                    <th>Status</th>
-                    <th>Assigned Worker</th>
+                    <SortableTh
+                      label="Department"
+                      sortKey="departmentName"
+                      sortBy={shiftsGrid.sortBy}
+                      sortDir={shiftsGrid.sortDir}
+                      onSort={() => shiftsGrid.toggleSort("departmentName")}
+                    />
+                    <SortableTh
+                      label="Date"
+                      sortKey="date"
+                      sortBy={shiftsGrid.sortBy}
+                      sortDir={shiftsGrid.sortDir}
+                      onSort={() => shiftsGrid.toggleSort("date")}
+                    />
+                    <SortableTh
+                      label="Time"
+                      sortKey="startTime"
+                      sortBy={shiftsGrid.sortBy}
+                      sortDir={shiftsGrid.sortDir}
+                      onSort={() => shiftsGrid.toggleSort("startTime")}
+                    />
+                    <SortableTh
+                      label="Status"
+                      sortKey="status"
+                      sortBy={shiftsGrid.sortBy}
+                      sortDir={shiftsGrid.sortDir}
+                      onSort={() => shiftsGrid.toggleSort("status")}
+                    />
+                    <SortableTh
+                      label="Assigned Worker"
+                      sortKey="assignedEmail"
+                      sortBy={shiftsGrid.sortBy}
+                      sortDir={shiftsGrid.sortDir}
+                      onSort={() => shiftsGrid.toggleSort("assignedEmail")}
+                    />
                     {canAssign && <th></th>}
                   </tr>
                 </thead>
@@ -589,7 +658,7 @@ export default function ManagerPage() {
                       <td colSpan={canAssign ? 6 : 5}>No shifts yet.</td>
                     </tr>
                   ) : (
-                    shiftsPager.pageItems.map((sh) => (
+                    shiftsGrid.pageItems.map((sh) => (
                       <tr key={sh.id}>
                         <td>{sh.departmentName}</td>
                         <td>{sh.date}</td>
@@ -640,10 +709,10 @@ export default function ManagerPage() {
               </table>
             </div>
             <Pager
-              pageCount={shiftsPager.pageCount}
-              currentPage={shiftsPager.currentPage}
-              onPrev={() => shiftsPager.setPage(shiftsPager.currentPage - 1)}
-              onNext={() => shiftsPager.setPage(shiftsPager.currentPage + 1)}
+              pageCount={shiftsGrid.pageCount}
+              currentPage={shiftsGrid.currentPage}
+              onPrev={() => shiftsGrid.setPage(shiftsGrid.currentPage - 1)}
+              onNext={() => shiftsGrid.setPage(shiftsGrid.currentPage + 1)}
             />
           </div>
 
@@ -653,11 +722,41 @@ export default function ManagerPage() {
               <table className="user-table">
                 <thead>
                   <tr>
-                    <th>Worker</th>
-                    <th>Date</th>
-                    <th>Time</th>
-                    <th>Type</th>
-                    <th>Reason</th>
+                    <SortableTh
+                      label="Worker"
+                      sortKey="email"
+                      sortBy={requestsGrid.sortBy}
+                      sortDir={requestsGrid.sortDir}
+                      onSort={() => requestsGrid.toggleSort("email")}
+                    />
+                    <SortableTh
+                      label="Date"
+                      sortKey="date"
+                      sortBy={requestsGrid.sortBy}
+                      sortDir={requestsGrid.sortDir}
+                      onSort={() => requestsGrid.toggleSort("date")}
+                    />
+                    <SortableTh
+                      label="Time"
+                      sortKey="startTime"
+                      sortBy={requestsGrid.sortBy}
+                      sortDir={requestsGrid.sortDir}
+                      onSort={() => requestsGrid.toggleSort("startTime")}
+                    />
+                    <SortableTh
+                      label="Type"
+                      sortKey="type"
+                      sortBy={requestsGrid.sortBy}
+                      sortDir={requestsGrid.sortDir}
+                      onSort={() => requestsGrid.toggleSort("type")}
+                    />
+                    <SortableTh
+                      label="Reason"
+                      sortKey="reason"
+                      sortBy={requestsGrid.sortBy}
+                      sortDir={requestsGrid.sortDir}
+                      onSort={() => requestsGrid.toggleSort("reason")}
+                    />
                     <th></th>
                   </tr>
                 </thead>
@@ -667,7 +766,7 @@ export default function ManagerPage() {
                       <td colSpan={6}>No pending requests.</td>
                     </tr>
                   ) : (
-                    requestsPager.pageItems.map((r) => (
+                    requestsGrid.pageItems.map((r) => (
                       <tr key={r.id}>
                         <td>{r.email}</td>
                         <td>{r.date}</td>
@@ -697,14 +796,10 @@ export default function ManagerPage() {
               </table>
             </div>
             <Pager
-              pageCount={requestsPager.pageCount}
-              currentPage={requestsPager.currentPage}
-              onPrev={() =>
-                requestsPager.setPage(requestsPager.currentPage - 1)
-              }
-              onNext={() =>
-                requestsPager.setPage(requestsPager.currentPage + 1)
-              }
+              pageCount={requestsGrid.pageCount}
+              currentPage={requestsGrid.currentPage}
+              onPrev={() => requestsGrid.setPage(requestsGrid.currentPage - 1)}
+              onNext={() => requestsGrid.setPage(requestsGrid.currentPage + 1)}
             />
           </div>
         </div>
