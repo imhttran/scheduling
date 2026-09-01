@@ -242,9 +242,9 @@ func TestUsersRBAC(t *testing.T) {
 	token := loginAs(t, server, email, password)
 	fillProfile(t, server, token) // lift the profile gate so RBAC is what's under test
 
-	// Client is rejected.
+	// Student (base role) is rejected.
 	if status, _ := doJSON(t, server, http.MethodGet, "/api/users", token, nil); status != http.StatusForbidden {
-		t.Fatalf("client: status = %d, want 403", status)
+		t.Fatalf("student: status = %d, want 403", status)
 	}
 	// Staff is allowed.
 	setRole(t, email, "staff")
@@ -293,7 +293,7 @@ func TestPatchRoleInvalidValue(t *testing.T) {
 	if status != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 (body %v)", status, body)
 	}
-	if body["message"] != "role must be one of: client, staff, admin" {
+	if body["message"] != "role must be one of: student, staff, manager, scheduler, admin" {
 		t.Fatalf("message = %v", body["message"])
 	}
 }

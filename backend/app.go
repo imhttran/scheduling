@@ -35,6 +35,11 @@ type Config struct {
 	MailFrom string
 
 	MaxAttempts int
+
+	// Login rate limiting: max failed attempts before a temporary lockout.
+	LoginMaxAttempts int
+	// Lockout window in minutes after exceeding the attempt limit.
+	LoginLockMinutes int
 }
 
 // Globals, mirroring the Node app's module-level prisma client and
@@ -61,6 +66,10 @@ func loadConfig() {
 		MaxAttempts: intOr(os.Getenv("MAX_ATTEMPTS"), 3),
 		// Bypass email verification when EMAIL_VERIFICATION_REQUIRED=false (dev / local setups).
 		EmailVerificationRequired: os.Getenv("EMAIL_VERIFICATION_REQUIRED") != "false",
+		// Failed logins before a temporary lockout (default 5).
+		LoginMaxAttempts: intOr(os.Getenv("LOGIN_MAX_ATTEMPTS"), 5),
+		// Lockout window in minutes (default 15).
+		LoginLockMinutes: intOr(os.Getenv("LOGIN_LOCK_MINUTES"), 15),
 	}
 	if cfg.JWTSecret = os.Getenv("JWT_SECRET"); cfg.JWTSecret == "" {
 		if cfg.Env == "production" {
@@ -157,6 +166,8 @@ func newRouter() http.Handler {
 		r.Post("/forgot-password", forgotPassword)
 		r.Post("/reset-password", resetPassword)
 		r.Post("/login", login)
+		r.Post("/login/verify", verifyLogin)
+		r.Post("/login/resend", resendLoginCode)
 
 		r.Group(func(r chi.Router) {
 			r.Use(requireAuth)
@@ -170,8 +181,42 @@ func newRouter() http.Handler {
 			r.With(requireRole("admin"), parseID).Delete("/users/{id}", deleteUser)
 			r.With(requireRole("admin"), parseID).Patch("/users/{id}/verification", patchVerification)
 			r.With(requireRole("admin"), parseID).Patch("/users/{id}/role", patchRole)
+			r.With(requireRole("admin"), parseID).Patch("/users/{id}/profile", adminUpdateProfile)
+			r.With(requireRole("admin"), parseID).Post("/users/{id}/generate-password", generateUserPassword)
 			r.With(requireRole("staff"), parseID).Post("/users/{id}/resend-verification", staffResendVerification)
 			r.With(requireRole("admin"), parseID).Post("/users/{id}/reset-password", adminResetPassword)
+
+			// ---- Student work-schedule system ----
+			r.With(requireRole("admin")).Get("/locations", listLocations)
+			r.With(requireRole("admin")).Post("/locations", createLocation)
+			r.With(requireRole("admin"), parseID).Patch("/locations/{id}", updateLocation)
+			r.With(requireRole("manager")).Get("/departments", listDepartments)
+			r.With(requireRole("admin")).Post("/departments", createDepartment)
+			r.With(requireRole("admin"), parseID).Patch("/departments/{id}", updateDepartment)
+			r.With(requireRole("manager")).Get("/jobs", listJobs)
+			r.With(requireRole("manager")).Post("/jobs", createJob)
+			r.With(requireRole("manager"), parseID).Patch("/jobs/{id}", updateJob)
+			r.With(requireRole("admin"), parseID).Post("/users/{id}/disable", setDisabled(true))
+			r.With(requireRole("admin"), parseID).Post("/users/{id}/enable", setDisabled(false))
+			r.With(requireRole("admin"), parseID).Post("/managers/{id}/assign", assignManager)
+
+			r.With(requireRole("manager")).Get("/students", listStudents)
+			r.With(requireRole("manager"), parseID).Post("/students/{id}/jobs", assignStudentJob)
+			r.With(requireRole("manager"), parseID, parseJobID).Delete("/students/{id}/jobs/{jobId}", removeStudentJob)
+			r.With(requireRole("manager"), parseID).Post("/students/{id}/schedule", addWeeklySchedule)
+			r.With(requireRole("manager"), parseID).Patch("/users/{id}/worker", setWorkerDetails)
+			r.With(requireRole("manager")).Post("/workqueue", createWorkqueueShift)
+			r.With(requireRole("manager")).Get("/staff/workqueue", staffWorkqueue)
+			r.With(requireRole("scheduler"), parseID).Post("/staff/workqueue/{id}/assign", assignWorkqueueShift)
+			r.With(requireRole("manager")).Get("/requests", listRequests)
+			r.With(requireRole("manager"), parseID).Post("/requests/{id}/approve", approveRequest)
+			r.With(requireRole("manager"), parseID).Post("/requests/{id}/deny", denyRequest)
+
+			r.Get("/me/calendar", myCalendar)
+			r.Get("/workqueue", myWorkqueue)
+			r.With(parseID).Post("/workqueue/{id}/pick", pickShift)
+			r.Post("/me/requests", createRequest)
+			r.Post("/me/preferences", addPreference)
 		})
 	})
 	return r
@@ -184,6 +229,7 @@ type authUser struct {
 	EmailVerified      bool   `json:"emailVerified"`
 	MustChangePassword bool   `json:"mustChangePassword"`
 	HasProfile         bool   `json:"hasProfile"`
+	Disabled           bool   `json:"disabled"`
 	Password           string `json:"-"` // stored hash, for /api/change-password
 }
 
@@ -192,6 +238,7 @@ type ctxKey int
 const (
 	userCtxKey ctxKey = iota
 	targetIDKey
+	targetJobIDKey
 )
 
 // A logged-in user can be mid-onboarding — temp password not yet changed,
@@ -234,9 +281,10 @@ func requireAuth(next http.Handler) http.Handler {
 		var u authUser
 		err = db.QueryRow(r.Context(), `
 			SELECT id, email, role, email_verified, must_change_password, password,
+			       disabled,
 			       EXISTS (SELECT 1 FROM user_profiles WHERE user_id = users.id)
 			FROM users WHERE email = $1`, email).
-			Scan(&u.ID, &u.Email, &u.Role, &u.EmailVerified, &u.MustChangePassword, &u.Password, &u.HasProfile)
+			Scan(&u.ID, &u.Email, &u.Role, &u.EmailVerified, &u.MustChangePassword, &u.Password, &u.Disabled, &u.HasProfile)
 		if errors.Is(err, pgx.ErrNoRows) {
 			respond(w, http.StatusNotFound, msg("User not found"))
 			return
@@ -249,6 +297,10 @@ func requireAuth(next http.Handler) http.Handler {
 		}
 		if verificationRequired() && !u.EmailVerified {
 			respond(w, http.StatusForbidden, msg("Please verify your email"))
+			return
+		}
+		if u.Disabled {
+			respond(w, http.StatusForbidden, msg("Access disabled"))
 			return
 		}
 		// Gates only need to know a profile exists, not its contents — routes
@@ -300,6 +352,24 @@ func parseID(next http.Handler) http.Handler {
 
 func targetID(r *http.Request) int {
 	return r.Context().Value(targetIDKey).(int)
+}
+
+// Shared by routes taking a :jobId param — rejects non-numeric ids before they
+// hit the database.
+func parseJobID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.Atoi(chi.URLParam(r, "jobId"))
+		if err != nil {
+			respond(w, http.StatusBadRequest, msg("Invalid job id"))
+			return
+		}
+		ctx := context.WithValue(r.Context(), targetJobIDKey, id)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func targetJobID(r *http.Request) int {
+	return r.Context().Value(targetJobIDKey).(int)
 }
 
 // ---- response helpers ----

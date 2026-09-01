@@ -3,7 +3,7 @@ package main
 // Port of common/roles.js — ranked lowest to highest: a role satisfies a
 // check for itself or anything below it.
 
-var roles = []string{"client", "staff", "admin"}
+var roles = []string{"student", "staff", "manager", "scheduler", "admin"}
 
 func roleIndex(role string) int {
 	for i, r := range roles {

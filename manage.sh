@@ -70,21 +70,24 @@ start_backend() {
 }
 
 stop_service() {
-  local dir="$1" name="$2"
+  local dir="$1" name="$2" port="$3"
   # Separate statement: in one `local` line every RHS is expanded before any
   # assignment happens, so $dir above would still be unbound here (set -u).
   local pid_file="$ROOT_DIR/$dir/$dir.pid"
+  local pid=""
   if [ -f "$pid_file" ]; then
-    local pid
     pid=$(cat "$pid_file")
-    if kill "$pid" 2>/dev/null; then
-      echo "Stopped $name (pid $pid)"
-    else
-      echo -e "${YELLOW}$name was not running${NC}"
-    fi
     rm -f "$pid_file"
+  fi
+  # Fall back to whatever is listening on the port (e.g. started manually,
+  # or a stale pid file) so Stop All always works.
+  if [ -z "$pid" ]; then
+    pid=$(lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | head -1)
+  fi
+  if [ -n "$pid" ] && kill "$pid" 2>/dev/null; then
+    echo "Stopped $name (pid $pid)"
   else
-    echo -e "${YELLOW}$name is not running (no pid file)${NC}"
+    echo -e "${YELLOW}$name is not running${NC}"
   fi
 }
 
@@ -124,6 +127,20 @@ reset_database() {
   echo -e "${GREEN}Database reset. Tables re-apply on next backend start.${NC}"
 }
 
+# Drop the schema, then restart the backend so it re-migrates and re-seeds
+# from backend/seed.csv. One-shot "start fresh with seed data".
+re_seed() {
+  local url
+  url=$(load_db_url)
+  echo -e "${RED}This drops ALL tables in: ${url}${NC}"
+  read -r -p "Type 'yes' to confirm: " confirm
+  if [ "$confirm" != "yes" ]; then echo "Aborted."; return 0; fi
+  psql "$url" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' || return 1
+  stop_service backend Backend "$PORT_BACKEND"
+  start_backend || return 1
+  echo -e "${GREEN}Database re-seeded.${NC}"
+}
+
 set_user_role() {
   read -r -p "Email: " email
   read -r -p "Role (client/staff/admin): " role
@@ -143,6 +160,21 @@ show_status() {
   fi
 }
 
+# Tail a service log. Ctrl-C to stop following.
+view_logs() {
+  echo "Which log?"
+  echo "  b) Backend"
+  echo "  f) Frontend"
+  echo "  a) Both"
+  read -r -p "Choose: " which
+  case "$which" in
+    b) tail -f /tmp/go-template-backend.log ;;
+    f) tail -f /tmp/go-template-frontend.log ;;
+    a) tail -f /tmp/go-template-backend.log /tmp/go-template-frontend.log ;;
+    *) echo -e "${YELLOW}Unknown option${NC}" ;;
+  esac
+}
+
 while true; do
   echo ""
   echo "==== Go + Next.js template ===="
@@ -155,6 +187,8 @@ while true; do
   echo " 7) First-Time Setup (install deps)"
   echo " 8) Set User Role"
   echo " 9) Reset Database (destructive)"
+  echo " 10) View Logs (tail)"
+  echo " 11) Re-seed (reset DB + restart backend)"
   echo " q) Quit"
   read -r -p "Choose: " choice
   case "$choice" in
@@ -162,8 +196,8 @@ while true; do
     2) start_backend ;;
     3) start_service "Frontend" frontend "$PORT_FRONTEND" npm run dev ;;
     4)
-      stop_service backend Backend
-      stop_service frontend Frontend
+      stop_service backend Backend "$PORT_BACKEND"
+      stop_service frontend Frontend "$PORT_FRONTEND"
       ;;
     5) show_status ;;
     6)
@@ -173,6 +207,8 @@ while true; do
     7) first_time_setup ;;
     8) set_user_role ;;
     9) reset_database ;;
+    10) view_logs ;;
+    11) re_seed ;;
     q) break ;;
     *) echo -e "${YELLOW}Unknown option${NC}" ;;
   esac

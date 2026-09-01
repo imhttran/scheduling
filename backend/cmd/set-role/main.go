@@ -12,7 +12,7 @@ import (
 )
 
 // Mirrors common/roles.js.
-var roles = []string{"client", "staff", "admin"}
+var roles = []string{"student", "staff", "manager", "scheduler", "admin"}
 
 const defaultDatabaseURL = "postgres://postgres:postgres@localhost:5432/go_template?sslmode=disable"
 

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -285,30 +287,202 @@ func resetPassword(w http.ResponseWriter, r *http.Request) {
 
 func login(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Email    string `json:"email"`
+		Email    string `json:"email"` // email or UID
 		Password string `json:"password"`
+		DeviceID string `json:"deviceId"`
 	}
 	decodeJSON(r, &body)
+	identifier := strings.TrimSpace(body.Email)
+
+	// Rate limit: reject if this identifier is currently locked out.
+	var lockedUntil *time.Time
+	_ = db.QueryRow(r.Context(),
+		`SELECT locked_until FROM login_attempts WHERE identifier = $1`, identifier).Scan(&lockedUntil)
+	if lockedUntil != nil && time.Now().Before(*lockedUntil) {
+		respond(w, http.StatusTooManyRequests, fail(http.StatusTooManyRequests,
+			"Too many failed attempts. Try again later."))
+		return
+	}
+
 	var id int
-	var storedHash string
+	var email, storedHash string
 	var verified bool
 	err := db.QueryRow(r.Context(),
-		`SELECT id, password, email_verified FROM users WHERE email = $1`, body.Email).
-		Scan(&id, &storedHash, &verified)
+		`SELECT id, email, password, email_verified FROM users WHERE email = $1 OR uid = $1`, identifier).
+		Scan(&id, &email, &storedHash, &verified)
 	if err != nil || !verifyPassword(body.Password, storedHash) {
+		// Record the failure; lock the identifier after the max attempts.
+		_, _ = db.Exec(r.Context(), `
+			INSERT INTO login_attempts (identifier, attempts, locked_until)
+			VALUES ($1, 1, NULL)
+			ON CONFLICT (identifier) DO UPDATE SET
+				attempts = login_attempts.attempts + 1,
+				locked_until = CASE
+					WHEN login_attempts.attempts + 1 >= $2 THEN now() + make_interval(mins => $3)
+					ELSE login_attempts.locked_until END,
+				updated_at = now()`,
+			identifier, cfg.LoginMaxAttempts, cfg.LoginLockMinutes)
 		respond(w, http.StatusUnauthorized, fail(http.StatusUnauthorized, "Invalid email or password"))
 		return
 	}
+	// Successful password — clear any prior failures.
+	_, _ = db.Exec(r.Context(),
+		`DELETE FROM login_attempts WHERE identifier = $1`, identifier)
 	if verificationRequired() && !verified {
 		respond(w, http.StatusForbidden, fail(http.StatusForbidden, "Please verify your email before logging in."))
 		return
 	}
+	// Trusted device? Skip 2FA.
+	if body.DeviceID != "" {
+		var known bool
+		if err := db.QueryRow(r.Context(),
+			`SELECT EXISTS (SELECT 1 FROM user_devices WHERE user_id = $1 AND device_id = $2)`, id, body.DeviceID).Scan(&known); err == nil && known {
+			respond(w, http.StatusOK, map[string]any{
+				"success": true, "message": "Login successful!",
+				"token": issueToken(email), "user": map[string]any{"email": email},
+			})
+			return
+		}
+	}
+	// New device — require 2FA.
+	token := randomToken()
+	code := randomCode()
+	if _, err := db.Exec(r.Context(), `
+		INSERT INTO login_codes (user_id, token, code, expires_at)
+		VALUES ($1, $2, $3, now() + interval '10 minutes')`, id, token, code); err != nil {
+		respond500(w, "Login Error", err, false)
+		return
+	}
+	sendLoginCode(r.Context(), id, email, code)
 	respond(w, http.StatusOK, map[string]any{
-		"success": true,
-		"message": "Login successful!",
-		"token":   issueToken(body.Email),
-		"user":    map[string]any{"email": body.Email},
+		"success": true, "twoFactorRequired": true, "token": token,
+		"message": "Enter the code sent to your device",
 	})
+}
+
+// Completes a 2FA login: validates the code, issues the real JWT, and
+// registers the device so future logins from it skip 2FA.
+func verifyLogin(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Token    string `json:"token"`
+		Code     string `json:"code"`
+		DeviceID string `json:"deviceId"`
+	}
+	decodeJSON(r, &body)
+	var userID int
+	var code, email string
+	var expiresAt time.Time
+	var used bool
+	var attempts int
+	err := db.QueryRow(r.Context(), `
+		SELECT lc.user_id, lc.code, lc.expires_at, lc.used, lc.attempts, u.email
+		FROM login_codes lc JOIN users u ON u.id = lc.user_id
+		WHERE lc.token = $1`, body.Token).
+		Scan(&userID, &code, &expiresAt, &used, &attempts, &email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		respond(w, http.StatusBadRequest, msg("Invalid or expired code"))
+		return
+	}
+	if err != nil {
+		respond500(w, "Verify Login Error", err, false)
+		return
+	}
+	// Lock the code after a handful of failed tries so a 4-digit code can't be
+	// brute-forced within its 10-minute window.
+	if used || time.Now().After(expiresAt) || attempts >= 5 {
+		respond(w, http.StatusBadRequest, msg("Invalid or expired code"))
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(code), []byte(body.Code)) != 1 {
+		_, _ = db.Exec(r.Context(),
+			`UPDATE login_codes SET attempts = attempts + 1 WHERE token = $1`, body.Token)
+		respond(w, http.StatusBadRequest, msg("Invalid or expired code"))
+		return
+	}
+	if _, err := db.Exec(r.Context(),
+		`UPDATE login_codes SET used = true WHERE token = $1`, body.Token); err != nil {
+		respond500(w, "Verify Login Error", err, false)
+		return
+	}
+	if body.DeviceID != "" {
+		_, _ = db.Exec(r.Context(),
+			`INSERT INTO user_devices (user_id, device_id) VALUES ($1, $2) ON CONFLICT (device_id) DO NOTHING`,
+			userID, body.DeviceID)
+	}
+	respond(w, http.StatusOK, map[string]any{
+		"success": true, "message": "Login successful!",
+		"token": issueToken(email), "user": map[string]any{"email": email},
+	})
+}
+
+// Resends the 2FA code for a pending login, up to 3 times.
+func resendLoginCode(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Token string `json:"token"`
+	}
+	decodeJSON(r, &body)
+	var userID, resends int
+	var email string
+	var expiresAt time.Time
+	var used bool
+	err := db.QueryRow(r.Context(), `
+		SELECT lc.user_id, lc.resends, lc.expires_at, lc.used, u.email
+		FROM login_codes lc JOIN users u ON u.id = lc.user_id
+		WHERE lc.token = $1`, body.Token).
+		Scan(&userID, &resends, &expiresAt, &used, &email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		respond(w, http.StatusBadRequest, msg("Invalid or expired code"))
+		return
+	}
+	if err != nil {
+		respond500(w, "Resend Code Error", err, false)
+		return
+	}
+	if used || time.Now().After(expiresAt) {
+		respond(w, http.StatusBadRequest, msg("Invalid or expired code"))
+		return
+	}
+	if resends >= 3 {
+		respond(w, http.StatusTooManyRequests, msg("Too many resend attempts"))
+		return
+	}
+	code := randomCode()
+	if _, err := db.Exec(r.Context(), `
+		UPDATE login_codes SET code = $1, resends = resends + 1, expires_at = now() + interval '10 minutes'
+		WHERE token = $2`, code, body.Token); err != nil {
+		respond500(w, "Resend Code Error", err, false)
+		return
+	}
+	sendLoginCode(r.Context(), userID, email, code)
+	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Code resent"})
+}
+
+// A 4-digit login code. In development it's always 1234 so testing doesn't
+// need a mail server; otherwise a random code.
+func randomCode() string {
+	if cfg.Env == "development" {
+		return "1234"
+	}
+	b := make([]byte, 2)
+	_, _ = rand.Read(b)
+	n := int(b[0])<<8 | int(b[1])
+	return fmt.Sprintf("%04d", n%10000)
+}
+
+// Sends the 2FA code via the user's preferred channel (text/phone → SMS,
+// else email). SMS is logged — no provider is wired up.
+func sendLoginCode(ctx context.Context, userID int, email, code string) {
+	var pref string
+	_ = db.QueryRow(ctx,
+		`SELECT communication_preference FROM user_profiles WHERE user_id = $1`, userID).Scan(&pref)
+	if pref == "text" || pref == "phone" {
+		log.Printf("[2fa] SMS to %s: your code is %s", email, code)
+		return
+	}
+	row := loginCodeEmail(email, code)
+	_, _ = db.Exec(ctx,
+		`INSERT INTO email_queue ("to", subject, body) VALUES ($1, $2, $3)`,
+		row.To, row.Subject, row.Body)
 }
 
 // Authenticated self-service password change. Used both for the general

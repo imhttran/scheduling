@@ -37,6 +37,18 @@ func passwordResetEmail(to, link string) emailData {
 		fmt.Sprintf("Hi,\n\nA password reset was requested for this account. Click the link below to choose a new password (expires in 1 hour):\n\n%s\n\nIf you didn't request this, you can ignore this email.\n\nThanks,\nThe Team", link)}
 }
 
+// Build the generated-password email row data.
+func generatedPasswordEmail(to, password string) emailData {
+	return emailData{to, "Your password has been reset",
+		fmt.Sprintf("Hi,\n\nYour password has been reset. Use the temporary password below to log in — you'll be asked to set a new one (enter this as your current password):\n\n%s\n\nThanks,\nThe Team", password)}
+}
+
+// Build the 2FA login-code email row data.
+func loginCodeEmail(to, code string) emailData {
+	return emailData{to, "Your login code",
+		fmt.Sprintf("Hi,\n\nYour login verification code is:\n\n%s\n\nIt expires in 10 minutes.\n\nThanks,\nThe Team", code)}
+}
+
 // Next.js client routes (no .html).
 func tokenLink(page, token string) string {
 	return fmt.Sprintf("%s/%s?token=%s", cfg.FrontendURL, page, token)

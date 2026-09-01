@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // Prisma's P2025 (record not found in an update) as a sentinel.
@@ -80,6 +81,14 @@ func processEmailQueue(ctx context.Context, take int) int {
 		ORDER BY created_at ASC
 		LIMIT $2`, cfg.MaxAttempts, take)
 	if err != nil {
+		// Tables missing (e.g. the DB was reset while this process was running) —
+		// recreate the schema instead of erroring every poll.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "42P01" {
+			log.Println("[emailQueue] schema missing, re-running migrations")
+			migrate(ctx)
+			return 0
+		}
 		log.Println("[emailQueue] worker error:", err)
 		return 0
 	}

@@ -1,0 +1,27 @@
+email,password,firstname,lastname,address1,address2,city,state,zip,country,role,department,department_code,location,location_abbr,location_address,location_city,location_state,location_zip,location_country,phone,uid,min_hours,max_hours
+manager@mail.com,Manager1234!,Maya,Manager,100 Admin Way,,Austin,TX,78701,US,manager,,,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0100,U00001,0,0
+manager2@mail.com,Manager1234!,Noah,Nelson,110 Fac Mgr Way,,Austin,TX,78705,US,manager,,,Kin Solving,KIN,1901 University Ave,Austin,TX,78705,US,512-555-0101,U00002,0,0
+manager3@mail.com,Manager1234!,Olivia,Ortega,120 Biz Mgr Way,,Austin,TX,78712,US,manager,,,Little Field,LTF,2400 Whitis Ave,Austin,TX,78712,US,512-555-0102,U00003,0,0
+manager4@mail.com,Manager1234!,Peter,Park,130 Cafe Mgr Way,,Austin,TX,78712,US,manager,,,Pation Cafe,PAT,2301 Speedway,Austin,TX,78712,US,512-555-0103,U00004,0,0
+scheduler@mail.com,Scheduler1234!,Sam,Scheduler,140 Sched Way,,Austin,TX,78705,US,scheduler,,,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0125,U00026,0,0
+student1@mail.com,Student1234!,Alex,Anderson,200 Campus Dr,Apt 1,Austin,TX,78712,US,student,dining,DIN,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0104,U00005,10,20
+student2@mail.com,Student1234!,Bailey,Brown,300 Library Ln,,Austin,TX,78712,US,student,facility,FAC,Kin Solving,KIN,1901 University Ave,Austin,TX,78705,US,512-555-0105,U00006,8,15
+student3@mail.com,Student1234!,Casey,Chen,400 Cafeteria Ct,,Austin,TX,78712,US,student,residential life,RES,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0106,U00007,12,25
+student4@mail.com,Student1234!,Dana,Davis,500 Dorm Rd,Room 5,Austin,TX,78705,US,student,business service,BIZ,Little Field,LTF,2400 Whitis Ave,Austin,TX,78712,US,512-555-0107,U00008,6,12
+student5@mail.com,Student1234!,Eli,Evans,600 Market St,,Austin,TX,78701,US,student,marketing,MKT,Pation Cafe,PAT,2301 Speedway,Austin,TX,78712,US,512-555-0108,U00009,10,18
+student6@mail.com,Student1234!,Fiona,Foster,700 Comm Ave,,Austin,TX,78701,US,student,communication,COM,Pation Cafe,PAT,2301 Speedway,Austin,TX,78712,US,512-555-0109,U00010,8,16
+student7@mail.com,Student1234!,George,Garcia,800 Dining Dr,,Austin,TX,78712,US,student,dining,DIN,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0110,U00011,10,22
+student8@mail.com,Student1234!,Hannah,Hill,900 Res Hall Rd,,Austin,TX,78705,US,student,residential life,RES,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0111,U00012,12,24
+student9@mail.com,Student1234!,Ian,Irwin,1000 Fac Way,,Austin,TX,78705,US,student,facility,FAC,Kin Solving,KIN,1901 University Ave,Austin,TX,78705,US,512-555-0112,U00013,8,14
+student10@mail.com,Student1234!,Jade,Johnson,1100 Biz Blvd,,Austin,TX,78712,US,student,business service,BIZ,Little Field,LTF,2400 Whitis Ave,Austin,TX,78712,US,512-555-0113,U00014,6,11
+student11@mail.com,Student1234!,Kyle,Kim,1200 Mkt St,,Austin,TX,78701,US,student,marketing,MKT,Pation Cafe,PAT,2301 Speedway,Austin,TX,78712,US,512-555-0114,U00015,10,19
+student12@mail.com,Student1234!,Lena,Lopez,1300 Comm Ct,,Austin,TX,78701,US,student,communication,COM,Pation Cafe,PAT,2301 Speedway,Austin,TX,78712,US,512-555-0115,U00016,8,17
+student13@mail.com,Student1234!,Miles,Miller,1400 Dining Ln,,Austin,TX,78712,US,student,dining,DIN,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0116,U00017,10,21
+student14@mail.com,Student1234!,Nina,Nguyen,1500 Fac Ave,,Austin,TX,78705,US,student,facility,FAC,Kin Solving,KIN,1901 University Ave,Austin,TX,78705,US,512-555-0117,U00018,8,13
+student15@mail.com,Student1234!,Omar,Owens,1600 Biz St,,Austin,TX,78712,US,student,business service,BIZ,Little Field,LTF,2400 Whitis Ave,Austin,TX,78712,US,512-555-0118,U00019,6,12
+student16@mail.com,Student1234!,Priya,Patel,1700 Dining Dr,,Austin,TX,78712,US,student,dining,DIN,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0119,U00020,10,20
+student17@mail.com,Student1234!,Quinn,Quinn,1800 Res Rd,,Austin,TX,78705,US,student,residential life,RES,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0120,U00021,12,23
+student18@mail.com,Student1234!,Ravi,Ramirez,1900 Dining Ln,,Austin,TX,78712,US,student,dining,DIN,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0121,U00022,10,19
+student19@mail.com,Student1234!,Sara,Singh,2000 Res Ave,,Austin,TX,78705,US,student,residential life,RES,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0122,U00023,12,22
+student20@mail.com,Student1234!,Tom,Tran,2100 Dining Ct,,Austin,TX,78712,US,student,dining,DIN,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0123,U00024,10,21
+student21@mail.com,Student1234!,Uma,Upton,2200 Res Blvd,,Austin,TX,78705,US,student,residential life,RES,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0124,U00025,12,24

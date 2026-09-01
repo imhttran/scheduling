@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"errors"
 	"net/http"
 	"time"
@@ -10,13 +11,18 @@ import (
 
 func listUsers(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
-	// Staff sees clients and other staff — admin accounts aren't theirs to
-	// manage. Admin sees everyone.
-	query := `SELECT id, email, role, email_verified, created_at FROM users`
+	// Staff sees everyone except admin accounts — admin accounts aren't theirs
+	// to manage. Admin sees everyone.
+	query := `
+		SELECT u.id, u.email, u.uid, u.role, u.email_verified, u.disabled, u.created_at,
+		       p.first_name, p.last_name, p.address, p.address2, p.city, p.state,
+		       p.zip, p.country, p.phone, p.communication_preference
+		FROM users u
+		LEFT JOIN user_profiles p ON p.user_id = u.id`
 	if !hasRole(u.Role, "admin") {
-		query += ` WHERE role IN ('client', 'staff')`
+		query += ` WHERE u.role <> 'admin'`
 	}
-	query += ` ORDER BY created_at ASC`
+	query += ` ORDER BY u.created_at ASC`
 	rows, err := db.Query(r.Context(), query)
 	if err != nil {
 		respond500(w, "List Users Error", err, false)
@@ -27,18 +33,35 @@ func listUsers(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id int
 		var email, role string
-		var verified bool
+		var verified, disabled bool
 		var createdAt time.Time
-		if err := rows.Scan(&id, &email, &role, &verified, &createdAt); err != nil {
+		var firstName, lastName, address, city, state, zip, country, phone, commPref *string
+		var address2 *string
+		var uid *string
+		if err := rows.Scan(&id, &email, &uid, &role, &verified, &disabled, &createdAt,
+			&firstName, &lastName, &address, &address2, &city, &state,
+			&zip, &country, &phone, &commPref); err != nil {
 			respond500(w, "List Users Error", err, false)
 			return
 		}
 		users = append(users, map[string]any{
-			"id":            id,
-			"email":         email,
-			"role":          role,
-			"emailVerified": verified,
-			"createdAt":     createdAt,
+			"id":                      id,
+			"email":                   email,
+			"role":                    role,
+			"emailVerified":           verified,
+			"disabled":                disabled,
+			"createdAt":               createdAt,
+			"uid":                     uid,
+			"firstName":               firstName,
+			"lastName":                lastName,
+			"address":                 address,
+			"address2":                address2,
+			"city":                    city,
+			"state":                   state,
+			"zip":                     zip,
+			"country":                 country,
+			"phone":                   phone,
+			"communicationPreference": commPref,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -55,6 +78,7 @@ func adminCreateUser(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
+		UID      string `json:"uid"`
 	}
 	decodeJSON(r, &body)
 	if !validateEmail(body.Email) {
@@ -65,14 +89,18 @@ func adminCreateUser(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, fail(http.StatusBadRequest, passwordError))
 		return
 	}
+	if len(body.UID) > 20 {
+		respond(w, http.StatusBadRequest, msg("uid must be 20 characters or fewer"))
+		return
+	}
 	var id int
 	var email, role string
 	var verified bool
 	err := db.QueryRow(r.Context(), `
-		INSERT INTO users (email, password, email_verified, must_change_password)
-		VALUES ($1, $2, true, true)
+		INSERT INTO users (email, uid, password, email_verified, must_change_password)
+		VALUES ($1, NULLIF($2, ''), $3, true, true)
 		RETURNING id, email, role, email_verified`,
-		body.Email, hashPassword(body.Password)).
+		body.Email, body.UID, hashPassword(body.Password)).
 		Scan(&id, &email, &role, &verified)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -167,10 +195,15 @@ func patchVerification(w http.ResponseWriter, r *http.Request) {
 func patchRole(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Role string `json:"role"`
+		UID  string `json:"uid"`
 	}
 	decodeJSON(r, &body)
 	if !isValidRole(body.Role) {
-		respond(w, http.StatusBadRequest, msg("role must be one of: client, staff, admin"))
+		respond(w, http.StatusBadRequest, msg("role must be one of: student, staff, manager, scheduler, admin"))
+		return
+	}
+	if len(body.UID) > 20 {
+		respond(w, http.StatusBadRequest, msg("uid must be 20 characters or fewer"))
 		return
 	}
 	if targetID(r) == currentUser(r).ID {
@@ -180,8 +213,8 @@ func patchRole(w http.ResponseWriter, r *http.Request) {
 	var id int
 	var email, role string
 	err := db.QueryRow(r.Context(), `
-		UPDATE users SET role = $1 WHERE id = $2
-		RETURNING id, email, role`, body.Role, targetID(r)).
+		UPDATE users SET role = $1, uid = NULLIF($3, '') WHERE id = $2
+		RETURNING id, email, role`, body.Role, targetID(r), body.UID).
 		Scan(&id, &email, &role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		respond(w, http.StatusNotFound, msg("User not found"))
@@ -231,3 +264,67 @@ func deleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func isValidRole(role string) bool { return roleIndex(role) >= 0 }
+
+// A 15-character password that always satisfies validatePassword (uppercase,
+// digit, special char). Uses crypto/rand.
+func generatePassword() string {
+	const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+	const digits = "23456789"
+	const special = "!@#$%^&*"
+	const all = upper + "abcdefghijkmnpqrstuvwxyz" + digits + special
+	randInt := func(n int) int {
+		var buf [1]byte
+		if _, err := rand.Read(buf[:]); err != nil {
+			return 0
+		}
+		return int(buf[0]) % n
+	}
+	b := make([]byte, 15)
+	// Guarantee one of each required class, then fill the rest.
+	classes := []string{upper, digits, special}
+	for i := 0; i < 3; i++ {
+		b[i] = classes[i][randInt(len(classes[i]))]
+	}
+	for i := 3; i < 15; i++ {
+		b[i] = all[randInt(len(all))]
+	}
+	// Shuffle so the guaranteed chars aren't always at the front.
+	for i := 14; i > 0; i-- {
+		j := randInt(i + 1)
+		b[i], b[j] = b[j], b[i]
+	}
+	return string(b)
+}
+
+// Admin-only: generates a new 15-char password, sets it (forcing a change on
+// next login), and emails it. When EXPOSE_GENERATED_PASSWORD=true, the
+// plaintext is returned so the admin can copy it for testing.
+func generateUserPassword(w http.ResponseWriter, r *http.Request) {
+	var email string
+	err := db.QueryRow(r.Context(),
+		`SELECT email FROM users WHERE id = $1`, targetID(r)).Scan(&email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		respond(w, http.StatusNotFound, msg("User not found"))
+		return
+	}
+	if err != nil {
+		respond500(w, "Generate Password Error", err, false)
+		return
+	}
+	password := generatePassword()
+	if _, err := db.Exec(r.Context(),
+		`UPDATE users SET password = $1, must_change_password = true WHERE id = $2`,
+		hashPassword(password), targetID(r)); err != nil {
+		respond500(w, "Generate Password Error", err, true)
+		return
+	}
+	row := generatedPasswordEmail(email, password)
+	if _, err := db.Exec(r.Context(),
+		`INSERT INTO email_queue ("to", subject, body) VALUES ($1, $2, $3)`,
+		row.To, row.Subject, row.Body); err != nil {
+		respond500(w, "Generate Password Error", err, true)
+		return
+	}
+	resp := map[string]any{"success": true, "message": "New password generated and emailed"}
+	respond(w, http.StatusOK, resp)
+}

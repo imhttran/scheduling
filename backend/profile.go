@@ -15,6 +15,7 @@ type profile struct {
 	LastName                string  `json:"lastName"`
 	Address                 string  `json:"address"`
 	Address2                *string `json:"address2"`
+	City                    string  `json:"city"`
 	State                   string  `json:"state"`
 	Zip                     string  `json:"zip"`
 	Country                 string  `json:"country"`
@@ -25,12 +26,12 @@ type profile struct {
 	AltEmail                *string `json:"altEmail"`
 }
 
-const profileColumns = `id, user_id, first_name, last_name, address, address2, state, zip, country, phone, communication_preference, linkedin, github, alt_email`
+const profileColumns = `id, user_id, first_name, last_name, address, address2, city, state, zip, country, phone, communication_preference, linkedin, github, alt_email`
 
 func scanProfile(row pgx.Row) (*profile, error) {
 	var p profile
 	err := row.Scan(&p.ID, &p.UserID, &p.FirstName, &p.LastName, &p.Address, &p.Address2,
-		&p.State, &p.Zip, &p.Country, &p.Phone, &p.CommunicationPreference,
+		&p.City, &p.State, &p.Zip, &p.Country, &p.Phone, &p.CommunicationPreference,
 		&p.Linkedin, &p.Github, &p.AltEmail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
@@ -56,6 +57,7 @@ type profileInput struct {
 	LastName                string  `json:"lastName"`
 	Address                 string  `json:"address"`
 	Address2                *string `json:"address2"`
+	City                    string  `json:"city"`
 	State                   string  `json:"state"`
 	Zip                     string  `json:"zip"`
 	Country                 string  `json:"country"`
@@ -154,15 +156,16 @@ func saveProfile(w http.ResponseWriter, r *http.Request) {
 	var p profile
 	err := db.QueryRow(r.Context(), `
 		INSERT INTO user_profiles
-			(user_id, first_name, last_name, address, address2, state, zip, country,
+			(user_id, first_name, last_name, address, address2, city, state, zip, country,
 			 phone, communication_preference, linkedin, github, alt_email)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING `+profileColumns,
 		currentUser(r).ID,
 		strings.TrimSpace(body.FirstName),
 		strings.TrimSpace(body.LastName),
 		strings.TrimSpace(body.Address),
 		optionalTrimmed(body.Address2),
+		strings.TrimSpace(body.City),
 		strings.TrimSpace(body.State),
 		strings.TrimSpace(body.Zip),
 		country,
@@ -172,7 +175,7 @@ func saveProfile(w http.ResponseWriter, r *http.Request) {
 		optionalTrimmed(body.Github),
 		optionalTrimmed(body.AltEmail),
 	).Scan(&p.ID, &p.UserID, &p.FirstName, &p.LastName, &p.Address, &p.Address2,
-		&p.State, &p.Zip, &p.Country, &p.Phone, &p.CommunicationPreference,
+		&p.City, &p.State, &p.Zip, &p.Country, &p.Phone, &p.CommunicationPreference,
 		&p.Linkedin, &p.Github, &p.AltEmail)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -187,4 +190,54 @@ func saveProfile(w http.ResponseWriter, r *http.Request) {
 		"message": "Profile saved!",
 		"profile": &p,
 	})
+}
+
+// Admin-only: upserts the registration/profile for a target user (not the
+// caller). Reuses the same validation as self-service saveProfile.
+func adminUpdateProfile(w http.ResponseWriter, r *http.Request) {
+	body := &profileInput{}
+	decodeJSON(r, body)
+	if validationError := validateProfileFields(body); validationError != "" {
+		respond(w, http.StatusBadRequest, msg(validationError))
+		return
+	}
+	country := strings.TrimSpace(body.Country)
+	if country == "" {
+		country = "US"
+	}
+	var p profile
+	err := db.QueryRow(r.Context(), `
+		INSERT INTO user_profiles
+			(user_id, first_name, last_name, address, address2, city, state, zip, country,
+			 phone, communication_preference, linkedin, github, alt_email)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		ON CONFLICT (user_id) DO UPDATE SET
+			first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name,
+			address = EXCLUDED.address, address2 = EXCLUDED.address2, city = EXCLUDED.city,
+			state = EXCLUDED.state, zip = EXCLUDED.zip, country = EXCLUDED.country,
+			phone = EXCLUDED.phone, communication_preference = EXCLUDED.communication_preference,
+			linkedin = EXCLUDED.linkedin, github = EXCLUDED.github, alt_email = EXCLUDED.alt_email
+		RETURNING `+profileColumns,
+		targetID(r),
+		strings.TrimSpace(body.FirstName),
+		strings.TrimSpace(body.LastName),
+		strings.TrimSpace(body.Address),
+		optionalTrimmed(body.Address2),
+		strings.TrimSpace(body.City),
+		strings.TrimSpace(body.State),
+		strings.TrimSpace(body.Zip),
+		country,
+		strings.TrimSpace(body.Phone),
+		body.CommunicationPreference,
+		optionalTrimmed(body.Linkedin),
+		optionalTrimmed(body.Github),
+		optionalTrimmed(body.AltEmail),
+	).Scan(&p.ID, &p.UserID, &p.FirstName, &p.LastName, &p.Address, &p.Address2,
+		&p.City, &p.State, &p.Zip, &p.Country, &p.Phone, &p.CommunicationPreference,
+		&p.Linkedin, &p.Github, &p.AltEmail)
+	if err != nil {
+		respond500(w, "Update Profile Error", err, true)
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Profile updated", "profile": &p})
 }

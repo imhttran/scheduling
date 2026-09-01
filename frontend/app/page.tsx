@@ -1,26 +1,128 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import { confirmedPasswordOrAlert, submitForm } from "@/lib/api";
 import { PageTitle } from "@/components/PageTitle";
 
-type LoginResult = { token: string };
+type LoginResult = { token: string; twoFactorRequired?: boolean };
+
+// A stable per-browser device id, used to skip 2FA on trusted devices.
+function getDeviceId(): string {
+  let id = localStorage.getItem("device_id");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("device_id", id);
+  }
+  return id;
+}
 
 export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [busy, setBusy] = useState(false);
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
+  const [digits, setDigits] = useState(["", "", "", ""]);
+  const [resends, setResends] = useState(0);
+  const digitRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const verifyWithCode = (code: string) => {
+    if (!pendingToken) return;
+    void submitForm<LoginResult>(
+      "/api/login/verify",
+      { token: pendingToken, code, deviceId: getDeviceId() },
+      {
+        busyLabel: "Verifying...",
+        onSuccess: (result) => {
+          localStorage.setItem("auth_token", result.token);
+          window.location.href = "/dashboard";
+        },
+      },
+      setBusy,
+    );
+  };
+
+  // Auto-verify once all four digits are filled.
+  useEffect(() => {
+    if (digits.every((d) => d !== "")) {
+      verifyWithCode(digits.join(""));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [digits]);
+
+  const handleDigitChange = (index: number, value: string) => {
+    const digit = value.replace(/\D/g, "").slice(-1);
+    const next = [...digits];
+    next[index] = digit;
+    setDigits(next);
+    if (digit && index < 3) digitRefs.current[index + 1]?.focus();
+  };
+
+  const handlePaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    const pasted = e.clipboardData
+      .getData("text")
+      .replace(/\D/g, "")
+      .slice(0, 4);
+    const next = ["", "", "", ""];
+    for (let i = 0; i < pasted.length; i++) next[i] = pasted[i];
+    setDigits(next);
+    digitRefs.current[Math.min(pasted.length, 3)]?.focus();
+  };
+
+  const handleKeyDown = (index: number, e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Backspace" && !digits[index] && index > 0) {
+      digitRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleResend = () => {
+    if (!pendingToken || resends >= 3) return;
+    void submitForm(
+      "/api/login/resend",
+      { token: pendingToken },
+      {
+        busyLabel: "Resending...",
+        onSuccess: () => {
+          setResends((n) => n + 1);
+          setDigits(["", "", "", ""]);
+          digitRefs.current[0]?.focus();
+        },
+      },
+      setBusy,
+    );
+  };
+
+  const handleCancelVerify = () => {
+    setPendingToken(null);
+    setDigits(["", "", "", ""]);
+    setResends(0);
+  };
 
   const handleLogin = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     void submitForm<LoginResult>(
       "/api/login",
-      { email: data.get("email"), password: data.get("password") },
+      {
+        email: data.get("email"),
+        password: data.get("password"),
+        deviceId: getDeviceId(),
+      },
       {
         busyLabel: "Signing in...",
         onSuccess: (result) => {
-          localStorage.setItem("auth_token", result.token);
-          window.location.href = "/dashboard";
+          if (result.twoFactorRequired) {
+            setPendingToken(result.token);
+          } else {
+            localStorage.setItem("auth_token", result.token);
+            window.location.href = "/dashboard";
+          }
         },
       },
       setBusy,
@@ -52,18 +154,74 @@ export default function LoginPage() {
   return (
     <div className="login-container">
       <PageTitle title="Login | Frontend Template" />
-      {mode === "login" ? (
+      {pendingToken ? (
+        <form className="login-form" autoComplete="off">
+          <h1>Verify It&apos;s You</h1>
+          <p>Enter the 4-digit code sent to your device</p>
+
+          <div className="input-group">
+            <label htmlFor="code-0">Verification Code</label>
+            <div className="code-inputs">
+              {digits.map((d, i) => (
+                <input
+                  key={i}
+                  ref={(el) => {
+                    digitRefs.current[i] = el;
+                  }}
+                  id={`code-${i}`}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]"
+                  maxLength={1}
+                  autoComplete="one-time-code"
+                  value={d}
+                  disabled={busy}
+                  onChange={(e) => handleDigitChange(i, e.target.value)}
+                  onPaste={handlePaste}
+                  onKeyDown={(e) => handleKeyDown(i, e)}
+                />
+              ))}
+            </div>
+            <div className="form-footer">
+              <p>
+                Didn&apos;t get it?{" "}
+                <a
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleResend();
+                  }}
+                >
+                  Resend code
+                </a>
+                {resends > 0 && ` (${3 - resends} left)`}
+              </p>
+              <p>
+                <a
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    handleCancelVerify();
+                  }}
+                >
+                  Cancel
+                </a>
+              </p>
+            </div>
+          </div>
+        </form>
+      ) : mode === "login" ? (
         <form className="login-form" onSubmit={handleLogin}>
           <h1>Welcome Back</h1>
           <p>Please enter your details</p>
 
           <div className="input-group">
-            <label htmlFor="email">Email</label>
+            <label htmlFor="email">Email or UID</label>
             <input
-              type="email"
+              type="text"
               id="email"
               name="email"
-              placeholder="Enter your email"
+              placeholder="Enter your email or UID"
               required
             />
           </div>

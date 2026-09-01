@@ -2,8 +2,10 @@
 
 - **Auth** — JWT login, scrypt password hashing, email verification, password
   reset, resend-verification, self-service change-password
-- **RBAC** — `client` < `staff` < `admin` roles with role-gated routes;
-  promotion is CLI-only so there's no self-service escalation
+- **RBAC** — `student` < `staff` < `manager` < `scheduler` < `admin` roles
+  with role-gated routes; promotion is CLI-only so there's no self-service
+  escalation. Schedulers share the manager scheduling routes (making schedules,
+  assigning shifts) and are scoped to a location like managers.
 - **Onboarding gates** — forced password change and required profile block
   API access until completed
 - **Admin user management** — create, delete, verify/unverify, change role,

@@ -10,6 +10,7 @@ export default function ProfilePage() {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     void submitAuthedForm("/api/profile", {
+      uid: data.get("uid"),
       firstName: data.get("firstName"),
       lastName: data.get("lastName"),
       address: data.get("address"),
@@ -35,6 +36,17 @@ export default function ProfilePage() {
         <div className="input-group">
           <label htmlFor="first-name">First Name</label>
           <input type="text" id="first-name" name="firstName" required />
+        </div>
+
+        <div className="input-group">
+          <label htmlFor="uid">UID (University ID)</label>
+          <input
+            type="text"
+            id="uid"
+            name="uid"
+            maxLength={20}
+            title="Your university ID, up to 20 characters"
+          />
         </div>
 
         <div className="input-group">

@@ -203,6 +203,20 @@ export default function DashboardPage() {
         }
         setMe(user);
 
+        // Route by role: students/managers/admins get their own schedule pages.
+        if (user.role === "student") {
+          window.location.href = "/student";
+          return;
+        }
+        if (user.role === "manager" || user.role === "scheduler") {
+          window.location.href = "/manager";
+          return;
+        }
+        if (user.role === "admin") {
+          window.location.href = "/admin";
+          return;
+        }
+
         // Only staff/admin can list users at all (backend enforces this too).
         if (hasRole(user.role, "staff")) await loadUsers(stored);
       } catch {
