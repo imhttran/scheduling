@@ -16,10 +16,7 @@ export const HEIGHT_FRACTION = 0.55;
 
 /**
  * Adaptive client-side pagination: the page size grows/shrinks with the
- * viewport height so the grid fills the available vertical space, and the
- * caller only needs to render `Pager` when `hasPages` is true.
- *
- * Pass a fixed `perPage` to keep a constant page size instead.
+ * viewport height so the grid fills the available vertical space.
  */
 export function usePager<T>(
   items: T[],
@@ -28,7 +25,6 @@ export function usePager<T>(
     reserve?: number;
     min?: number;
     heightFraction?: number;
-    perPage?: number;
   },
 ) {
   const {
@@ -36,7 +32,6 @@ export function usePager<T>(
     reserve = DEFAULT_RESERVE,
     min = MIN_ROWS,
     heightFraction = HEIGHT_FRACTION,
-    perPage,
   } = options ?? {};
 
   const [viewport, setViewport] = useState(
@@ -52,10 +47,9 @@ export function usePager<T>(
   }, []);
 
   const rows = useMemo(() => {
-    if (perPage) return perPage;
     const avail = viewport * heightFraction - reserve;
     return Math.max(min, Math.floor(avail / rowHeight));
-  }, [viewport, heightFraction, reserve, rowHeight, min, perPage]);
+  }, [viewport, heightFraction, reserve, rowHeight, min]);
 
   const pageCount = Math.max(1, Math.ceil(items.length / rows));
   const currentPage = Math.min(page, pageCount);
@@ -68,10 +62,8 @@ export function usePager<T>(
     pageItems,
     pageCount,
     currentPage,
-    rows,
     setPage,
     resetToFirst: () => setPage(1),
-    hasPages: pageCount > 1,
   };
 }
 
@@ -85,7 +77,6 @@ export function useSortablePage<T>(
     reserve?: number;
     min?: number;
     heightFraction?: number;
-    perPage?: number;
   },
 ) {
   const [sortBy, setSortBy] = useState<string>(initialSortKey);

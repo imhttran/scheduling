@@ -22,7 +22,6 @@ export default function ResetPasswordPage() {
         password,
       },
       {
-        busyLabel: "Resetting...",
         onSuccess: (result) => {
           localStorage.setItem("auth_token", result.token);
           alert(result.message);

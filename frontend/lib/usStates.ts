@@ -54,17 +54,4 @@ export const US_STATES: readonly (readonly [string, string])[] = [
   ["WY", "Wyoming"],
 ];
 
-export const US_STATE_CODES: ReadonlySet<string> = new Set(
-  US_STATES.map(([code]) => code),
-);
-
-// Same shared-list treatment as US_STATES, kept here since it's one more
-// address field — a single entry today, but validated the same way (one
-// list, checked on both ends) so adding a second country later is additive.
-export const COUNTRIES: readonly (readonly [string, string])[] = [
-  ["US", "United States"],
-];
-
-export const COUNTRY_CODES: ReadonlySet<string> = new Set(
-  COUNTRIES.map(([code]) => code),
-);
+export const COUNTRIES = [["US", "United States"]] as const;

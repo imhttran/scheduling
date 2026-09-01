@@ -37,7 +37,6 @@ export default function LoginPage() {
       "/api/login/verify",
       { token: pendingToken, code, deviceId: getDeviceId() },
       {
-        busyLabel: "Verifying...",
         onSuccess: (result) => {
           localStorage.setItem("auth_token", result.token);
           window.location.href = "/dashboard";
@@ -87,7 +86,6 @@ export default function LoginPage() {
       "/api/login/resend",
       { token: pendingToken },
       {
-        busyLabel: "Resending...",
         onSuccess: () => {
           setResends((n) => n + 1);
           setDigits(["", "", "", ""]);
@@ -115,7 +113,6 @@ export default function LoginPage() {
         deviceId: getDeviceId(),
       },
       {
-        busyLabel: "Signing in...",
         onSuccess: (result) => {
           if (result.twoFactorRequired) {
             setPendingToken(result.token);
@@ -141,7 +138,6 @@ export default function LoginPage() {
       "/api/signup",
       { email: data.get("email"), password },
       {
-        busyLabel: "Registering...",
         onSuccess: () => {
           alert("Account created! You can now log in.");
           setMode("login");
