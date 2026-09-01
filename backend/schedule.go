@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -85,6 +88,20 @@ func hoursBetween(start, end string) float64 {
 		return t.AddDate(2000, 0, 0)
 	}
 	return parse(end).Sub(parse(start)).Hours()
+}
+
+// addHours returns t ("HH:MM") plus hours, as "HH:MM" ("24:00" for end-of-day).
+func addHours(t string, hours float64) string {
+	if t == "24:00" {
+		t = "00:00"
+	}
+	parts := strings.Split(t, ":")
+	h, _ := strconv.Atoi(parts[0])
+	m, _ := strconv.Atoi(parts[1])
+	total := float64(h*60+m) + hours*60
+	nh := int(total) / 60
+	nm := int(total) % 60
+	return fmt.Sprintf("%02d:%02d", nh, nm)
 }
 
 // ---- admin: locations & departments ----
@@ -794,9 +811,11 @@ func listStudents(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	query := `
 		SELECT u.id, u.email, u.disabled, u.worker_type, COALESCE(u.hourly_limit, 0),
+		       COALESCE(up.first_name, ''), COALESCE(up.last_name, ''),
 		       sj.job_id, j.name, j.department_id, d.name, d.location_id,
 		       sj.min_hours, sj.max_hours, sj.active
 		FROM users u
+		LEFT JOIN user_profiles up ON up.user_id = u.id
 		LEFT JOIN student_jobs sj ON sj.user_id = u.id
 		LEFT JOIN jobs j ON j.id = sj.job_id
 		LEFT JOIN departments d ON d.id = j.department_id
@@ -833,14 +852,14 @@ func listStudents(w http.ResponseWriter, r *http.Request) {
 	order := []int{}
 	for rows.Next() {
 		var id, hourlyLimit int
-		var email, workerType string
+		var email, workerType, firstName, lastName string
 		var disabled bool
 		var jobID *int
 		var jobName, deptName *string
 		var deptID, locID *int
 		var minH, maxH *int
 		var active *bool
-		if err := rows.Scan(&id, &email, &disabled, &workerType, &hourlyLimit, &jobID, &jobName, &deptID, &deptName, &locID, &minH, &maxH, &active); err != nil {
+		if err := rows.Scan(&id, &email, &disabled, &workerType, &hourlyLimit, &firstName, &lastName, &jobID, &jobName, &deptID, &deptName, &locID, &minH, &maxH, &active); err != nil {
 			respond500(w, "List Students Error", err, false)
 			return
 		}
@@ -854,6 +873,7 @@ func listStudents(w http.ResponseWriter, r *http.Request) {
 			}
 			row = map[string]any{
 				"id": id, "email": email, "disabled": disabled,
+				"name":       strings.TrimSpace(firstName + " " + lastName),
 				"workerType": workerType, "workerTypeLabel": workerTypeLabel(workerType),
 				"hourlyLimit":   pol.regular,
 				"weekHoursCap":  pol.cap,
@@ -1141,7 +1161,13 @@ func staffWorkqueue(w http.ResponseWriter, r *http.Request) {
 func assignWorkqueueShift(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	var body struct {
-		UserID int `json:"userId"`
+		UserID    int     `json:"userId"`
+		Hours     float64 `json:"hours"`
+		StartTime string  `json:"startTime"`
+		Blocks    []struct {
+			StartTime string `json:"startTime"`
+			EndTime   string `json:"endTime"`
+		} `json:"blocks"`
 	}
 	decodeJSON(r, &body)
 	shiftID := targetID(r)
@@ -1257,7 +1283,9 @@ func assignWorkqueueShift(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Enforce the worker's weekly-hour limits (students cap at 20/wk; staff
-	// overtime past their regular hours needs manager approval).
+	// overtime past their regular hours needs manager approval). Hourly workers
+	// can be assigned one or more 2-hour blocks of the shift; the rest of the
+	// slot stays open.
 	var date time.Time
 	var start, end string
 	if err := db.QueryRow(r.Context(),
@@ -1265,7 +1293,97 @@ func assignWorkqueueShift(w http.ResponseWriter, r *http.Request) {
 		respond500(w, "Assign Shift Error", err, false)
 		return
 	}
-	allowance, err := allowanceFor(r.Context(), body.UserID, hoursBetween(start, end), date)
+
+	// Multi-block assignment: the scheduler selected several 2-hour blocks. Each
+	// is assigned to the open workqueue row in this shift's group that covers it
+	// (re-found per block, since earlier blocks split the group). The weekly-hour
+	// allowance is checked once against the total.
+	if len(body.Blocks) > 0 {
+		var parentID *int
+		if err := db.QueryRow(r.Context(),
+			`SELECT parent_shift_id FROM workqueue WHERE id = $1`, shiftID).Scan(&parentID); err != nil {
+			respond500(w, "Assign Shift Error", err, false)
+			return
+		}
+		groupID := shiftID
+		if parentID != nil {
+			groupID = *parentID
+		}
+		var totalHours float64
+		for _, b := range body.Blocks {
+			if b.StartTime == "" || b.EndTime == "" {
+				respond(w, http.StatusBadRequest, msg("Each block needs startTime and endTime"))
+				return
+			}
+			h := hoursBetween(b.StartTime, b.EndTime)
+			if h <= 0 {
+				respond(w, http.StatusBadRequest, msg("Block must be a positive length"))
+				return
+			}
+			totalHours += h
+		}
+		allowance, err := allowanceFor(r.Context(), body.UserID, totalHours, date)
+		if err != nil {
+			respond500(w, "Assign Shift Error", err, false)
+			return
+		}
+		switch allowance {
+		case "blocked":
+			respond(w, http.StatusBadRequest, msg("Assignment exceeds the worker's weekly hour limit"))
+			return
+		case "pending":
+			if err := createOverflowRequest(r.Context(), body.UserID, shiftID, "Exceeds regular hours (overtime)"); err != nil {
+				respond500(w, "Assign Shift Error", err, true)
+				return
+			}
+			respond(w, http.StatusAccepted, map[string]any{
+				"success": true, "assigned": false,
+				"message": "Shift would put worker on overtime — pending manager approval",
+			})
+			return
+		}
+		for _, b := range body.Blocks {
+			var rowID int
+			if err := db.QueryRow(r.Context(), `
+				SELECT id FROM workqueue
+				WHERE (parent_shift_id = $1 OR id = $2) AND status = 'open'
+				  AND start_time <= $3 AND $3 < end_time
+				ORDER BY start_time LIMIT 1`,
+				groupID, shiftID, b.StartTime).Scan(&rowID); err != nil {
+				respond500(w, "Assign Shift Error", err, false)
+				return
+			}
+			if err := assignBlockToRow(r.Context(), rowID, body.UserID, b.StartTime[:5], b.EndTime[:5]); err != nil {
+				respond500(w, "Assign Shift Error", err, false)
+				return
+			}
+		}
+		respond(w, http.StatusOK, map[string]any{"success": true, "message": "Shift assigned"})
+		return
+	}
+
+	// Single-block assignment (backward compatible): the block starts at the
+	// shift's start by default — which, for an open remainder, is the gap right
+	// after the last assigned block. The scheduler may pass an explicit
+	// startTime to place the block in the middle of the slot instead.
+	fullHours := hoursBetween(start, end)
+	blockHours := fullHours
+	blockStart := start[:5]
+	if body.StartTime != "" {
+		st := body.StartTime[:5]
+		if hoursBetween(start[:5], st) >= 0 && hoursBetween(st, end[:5]) > 0 {
+			blockStart = st
+		}
+	}
+	if body.Hours > 0 && body.Hours < fullHours {
+		blockHours = body.Hours
+	}
+	blockEnd := addHours(blockStart, blockHours)
+	if hoursBetween(blockStart, blockEnd) <= 0 || hoursBetween(blockEnd, end[:5]) < 0 {
+		respond(w, http.StatusBadRequest, msg("Block must fit within the shift"))
+		return
+	}
+	allowance, err := allowanceFor(r.Context(), body.UserID, blockHours, date)
 	if err != nil {
 		respond500(w, "Assign Shift Error", err, false)
 		return
@@ -1286,18 +1404,47 @@ func assignWorkqueueShift(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tag, err := db.Exec(r.Context(),
-		`UPDATE workqueue SET status = 'assigned', assigned_user_id = $2 WHERE id = $1`,
-		shiftID, body.UserID)
-	if err != nil {
+	if err := assignBlockToRow(r.Context(), shiftID, body.UserID, blockStart, blockEnd); err != nil {
 		respond500(w, "Assign Shift Error", err, false)
 		return
 	}
-	if tag.RowsAffected() == 0 {
-		respond(w, http.StatusNotFound, msg("Shift not found"))
-		return
-	}
 	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Shift assigned"})
+}
+
+// assignBlockToRow assigns [blockStart, blockEnd] of the given open workqueue
+// row to userID, leaving the uncovered parts of the slot open. New rows inherit
+// the group's parent_shift_id so the calendar can reconstruct the full shift.
+func assignBlockToRow(ctx context.Context, rowID, userID int, blockStart, blockEnd string) error {
+	var start, end string
+	var parentID *int
+	if err := db.QueryRow(ctx,
+		`SELECT start_time, end_time, parent_shift_id FROM workqueue WHERE id = $1`, rowID).Scan(&start, &end, &parentID); err != nil {
+		return err
+	}
+	groupID := rowID
+	if parentID != nil {
+		groupID = *parentID
+	}
+	if blockEnd != end[:5] {
+		if _, err := db.Exec(ctx, `
+			INSERT INTO workqueue (department_id, date, start_time, end_time, status, parent_shift_id)
+			SELECT department_id, date, $1, end_time, 'open', $3 FROM workqueue WHERE id = $2`,
+			blockEnd, rowID, groupID); err != nil {
+			return err
+		}
+	}
+	if blockStart != start[:5] {
+		if _, err := db.Exec(ctx, `
+			INSERT INTO workqueue (department_id, date, start_time, end_time, status, parent_shift_id)
+			SELECT department_id, date, start_time, $1, 'open', $3 FROM workqueue WHERE id = $2`,
+			blockStart, rowID, groupID); err != nil {
+			return err
+		}
+	}
+	_, err := db.Exec(ctx,
+		`UPDATE workqueue SET status = 'assigned', assigned_user_id = $2, start_time = $3, end_time = $4, parent_shift_id = $5 WHERE id = $1`,
+		rowID, userID, blockStart, blockEnd, groupID)
+	return err
 }
 
 // ---- manager: requests ----
@@ -1537,6 +1684,77 @@ func workerCalendar(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	respond(w, http.StatusOK, map[string]any{"calendar": calendar})
+}
+
+// Scheduler/manager coverage view: every workqueue shift in the caller's scope
+// for the given week, with the assigned worker's name. Schedulers see their
+// department, managers their location, admins everything.
+func schedulerCalendar(w http.ResponseWriter, r *http.Request) {
+	u := currentUser(r)
+	anchor := time.Now()
+	if d := r.URL.Query().Get("date"); d != "" {
+		if t, err := time.Parse("2006-01-02", d); err == nil {
+			anchor = t
+		}
+	}
+	monday := weekMondayOf(anchor)
+	query := `
+		SELECT w.id, w.date, w.start_time, w.end_time, d.name, w.status,
+		       COALESCE(w.assigned_user_id, 0), COALESCE(up.first_name || ' ' || up.last_name, ''),
+		       COALESCE(w.parent_shift_id, 0)
+		FROM workqueue w
+		JOIN departments d ON d.id = w.department_id
+		LEFT JOIN user_profiles up ON up.user_id = w.assigned_user_id`
+	where := []string{}
+	args := []any{}
+	if !hasRole(u.Role, "admin") {
+		if u.Role == "scheduler" {
+			deptID, err := schedulerDepartmentID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "Scheduler Calendar Error", err, false)
+				return
+			}
+			where = append(where, "w.department_id = $1")
+			args = append(args, deptID)
+		} else {
+			locID, err := managerLocationID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "Scheduler Calendar Error", err, false)
+				return
+			}
+			where = append(where, "d.location_id = $1")
+			args = append(args, locID)
+		}
+	}
+	where = append(where, fmt.Sprintf("w.date >= $%d", len(args)+1), fmt.Sprintf("w.date < $%d", len(args)+2))
+	args = append(args, monday, monday.AddDate(0, 0, 7))
+	query += " WHERE " + strings.Join(where, " AND ") + " ORDER BY w.date, w.start_time"
+
+	rows, err := db.Query(r.Context(), query, args...)
+	if err != nil {
+		respond500(w, "Scheduler Calendar Error", err, false)
+		return
+	}
+	defer rows.Close()
+	shifts := []map[string]any{}
+	for rows.Next() {
+		var id, assignedID, parentID int
+		var dept, status, assignedName string
+		var date time.Time
+		var start, end string
+		if err := rows.Scan(&id, &date, &start, &end, &dept, &status, &assignedID, &assignedName, &parentID); err != nil {
+			respond500(w, "Scheduler Calendar Error", err, false)
+			return
+		}
+		shifts = append(shifts, map[string]any{
+			"id": id, "date": date.Format("2006-01-02"),
+			"startTime": start[:5], "endTime": end[:5],
+			"departmentName": dept, "status": status,
+			"assignedUserId": assignedID, "assignedName": assignedName,
+			"parentShiftId": parentID,
+		})
+	}
+	respond(w, http.StatusOK, map[string]any{"shifts": shifts})
 }
 
 // Manager-scoped: a worker's preferred days/times.

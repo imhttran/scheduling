@@ -210,6 +210,12 @@ body {
     transform: scale(0.96);
 }
 
+.login-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+}
+
 .form-footer {
     margin-top: 1.5rem;
     font-size: 0.875rem;
@@ -576,6 +582,160 @@ body {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* Unassigned workqueue shift in the scheduler coverage calendar. */
+.cal-shift-open {
+    background: color-mix(in srgb, var(--text-muted) 8%, transparent);
+    border: 1px dashed var(--text-muted);
+    border-left: 3px dashed var(--text-muted);
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.cal-shift-open:hover {
+    background: color-mix(in srgb, var(--primary-color) 18%, transparent);
+    border-color: var(--primary-color);
+    border-left-color: var(--primary-color);
+    color: var(--text-color);
+}
+
+/* Shift blocks are buttons; reset button defaults so they match the divs. */
+button.cal-shift {
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+button.cal-shift:hover {
+    filter: brightness(1.05);
+}
+
+/* Resource (coverage) calendar: rows = workers, time across the top. */
+.res-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.res-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--border-color);
+    background: var(--raised-color);
+    color: var(--text-color);
+    border-radius: 999px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition:
+        opacity 150ms,
+        background 150ms;
+}
+
+.res-filter-chip:hover {
+    background: var(--primary-color);
+    color: var(--on-primary);
+}
+
+.res-filter-chip.off {
+    opacity: 0.45;
+    text-decoration: line-through;
+}
+
+.res-filter-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.res-filter-open {
+    border: 1px dashed var(--text-muted);
+    background: color-mix(in srgb, var(--text-muted) 8%, transparent);
+}
+
+.res-scroll {
+    overflow-x: auto;
+}
+
+.res-grid {
+    min-width: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.res-row {
+    display: flex;
+    align-items: stretch;
+}
+
+.res-label {
+    flex: 0 0 120px;
+    width: 120px;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-right: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--raised-color);
+    position: sticky;
+    left: 0;
+    z-index: 2;
+}
+
+.res-track {
+    position: relative;
+    height: 40px;
+    border-bottom: 1px solid var(--border-color);
+    flex: 1;
+}
+
+.res-track-header {
+    height: 28px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.res-daylabel {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    text-align: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-right: 1px solid var(--border-color);
+    line-height: 28px;
+    background: var(--raised-color);
+}
+
+.res-hour {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    line-height: 28px;
+}
+
+.res-gridline {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid var(--border-color);
+    opacity: 0.4;
+}
+
+.res-dayline {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 2px solid var(--border-color);
 }
 
 .cal-empty {
@@ -1067,4 +1227,69 @@ body {
 
 .modal-actions .cancel-button:active {
     transform: scale(0.96);
+}
+
+/* 2-hour coverage blocks in the assign modal. */
+.block-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.block-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 96px;
+    padding: 0.5rem 0.6rem;
+    background: var(--raised-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.8125rem;
+    cursor: pointer;
+    transition:
+        background-color 150ms,
+        border-color 150ms,
+        transform 150ms;
+}
+
+.block-btn input[type="checkbox"] {
+    accent-color: var(--accent-color);
+    margin: 0;
+}
+
+.block-btn:hover:not(.taken) {
+    border-color: var(--accent-color);
+}
+
+.block-btn:active:not(.taken) {
+    transform: scale(0.97);
+}
+
+.block-btn.selected {
+    background: color-mix(in srgb, var(--accent-color) 15%, transparent);
+    border-color: var(--accent-color);
+}
+
+.block-btn.taken {
+    opacity: 0.55;
+    cursor: not-allowed;
+    text-decoration: line-through;
+}
+
+.block-btn.whole {
+    margin-top: 4px;
+    width: 100%;
+    flex: none;
+    justify-content: center;
+}
+
+.block-taken {
+    display: block;
+    font-size: 0.6875rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }

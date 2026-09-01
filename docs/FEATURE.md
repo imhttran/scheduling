@@ -6,6 +6,9 @@
   with role-gated routes; promotion is CLI-only so there's no self-service
   escalation. Schedulers share the manager scheduling routes (making schedules,
   assigning shifts) and are scoped to a location like managers.
+- **Coverage calendar** — schedulers/managers/admins get a department-wide week
+  grid (`/scheduler/calendar`) showing every shift in their scope color-coded by
+  worker, with unassigned workqueue shifts shown as open slots.
 - **Onboarding gates** — forced password change and required profile block
   API access until completed
 - **Admin user management** — create, delete, verify/unverify, change role,

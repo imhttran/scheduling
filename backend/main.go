@@ -40,6 +40,9 @@ var security24hSQL string
 //go:embed migrations/010_workqueue_job.sql
 var workqueueJobSQL string
 
+//go:embed migrations/011_workqueue_parent.sql
+var workqueueParentSQL string
+
 func main() {
 	loadEnvFiles()
 	loadConfig()
@@ -98,6 +101,7 @@ func migrate(ctx context.Context) {
 		{8, schedulerAssignmentsSQL},
 		{9, security24hSQL},
 		{10, workqueueJobSQL},
+		{11, workqueueParentSQL},
 	} {
 		var applied bool
 		if err := db.QueryRow(ctx,

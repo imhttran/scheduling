@@ -384,6 +384,9 @@ export default function ManagerPage() {
           </>
         }
       >
+        <a className="page-nav-link" href="/scheduler/calendar">
+          Calendar view
+        </a>
         <a className="logout-link" href="/" onClick={logout}>
           Logout
         </a>
