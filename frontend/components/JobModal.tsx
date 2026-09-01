@@ -24,17 +24,17 @@ export type JobInput = {
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-// Default operating hours for a new job: weekdays 8h (40h/wk), weekends 10h
-// (20h/wk). Mirrors defaultJobSchedules() in the backend.
+// Default operating hours for a new job: weekdays 9am-5pm (8h, 40h/wk),
+// weekends 10h (20h/wk). Mirrors defaultJobSchedules() in the backend.
 const DEFAULT_SCHEDULES: Record<
   number,
   { startTime: string; endTime: string }
 > = {
-  1: { startTime: "08:00", endTime: "16:00" },
-  2: { startTime: "08:00", endTime: "16:00" },
-  3: { startTime: "08:00", endTime: "16:00" },
-  4: { startTime: "08:00", endTime: "16:00" },
-  5: { startTime: "08:00", endTime: "16:00" },
+  1: { startTime: "09:00", endTime: "17:00" },
+  2: { startTime: "09:00", endTime: "17:00" },
+  3: { startTime: "09:00", endTime: "17:00" },
+  4: { startTime: "09:00", endTime: "17:00" },
+  5: { startTime: "09:00", endTime: "17:00" },
   6: { startTime: "10:00", endTime: "20:00" },
   0: { startTime: "10:00", endTime: "20:00" },
 };

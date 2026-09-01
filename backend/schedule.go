@@ -455,16 +455,16 @@ func deptInCallerLocation(w http.ResponseWriter, r *http.Request, deptID int) bo
 	return true
 }
 
-// Default operating hours for a new job: weekdays 8h each (40h/wk) and
-// weekends 10h each (20h/wk). Used when a job is created without explicit
+// Default operating hours for a new job: weekdays 9am-5pm (8h each, 40h/wk)
+// and weekends 10h each (20h/wk). Used when a job is created without explicit
 // schedules.
 func defaultJobSchedules() []jobScheduleInput {
 	return []jobScheduleInput{
-		{DayOfWeek: 1, StartTime: "08:00", EndTime: "16:00"}, // Mon
-		{DayOfWeek: 2, StartTime: "08:00", EndTime: "16:00"}, // Tue
-		{DayOfWeek: 3, StartTime: "08:00", EndTime: "16:00"}, // Wed
-		{DayOfWeek: 4, StartTime: "08:00", EndTime: "16:00"}, // Thu
-		{DayOfWeek: 5, StartTime: "08:00", EndTime: "16:00"}, // Fri
+		{DayOfWeek: 1, StartTime: "09:00", EndTime: "17:00"}, // Mon
+		{DayOfWeek: 2, StartTime: "09:00", EndTime: "17:00"}, // Tue
+		{DayOfWeek: 3, StartTime: "09:00", EndTime: "17:00"}, // Wed
+		{DayOfWeek: 4, StartTime: "09:00", EndTime: "17:00"}, // Thu
+		{DayOfWeek: 5, StartTime: "09:00", EndTime: "17:00"}, // Fri
 		{DayOfWeek: 6, StartTime: "10:00", EndTime: "20:00"}, // Sat
 		{DayOfWeek: 0, StartTime: "10:00", EndTime: "20:00"}, // Sun
 	}
