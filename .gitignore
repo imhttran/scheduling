@@ -3,3 +3,6 @@ node_modules/
 *.pid
 .env
 .playwright-mcp/
+.claude/
+.github/
+research/
