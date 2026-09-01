@@ -14,7 +14,8 @@ import { PageFooter } from "@/components/PageFooter";
 import { PageTitle } from "@/components/PageTitle";
 import { Modal } from "@/components/Modal";
 import { JobModal, type JobInput } from "@/components/JobModal";
-import { Pager, SortableTh, useSortablePage } from "@/lib/pagination";
+import { useSortablePage } from "@/lib/pagination";
+import { DataGrid, type Column } from "@/components/DataGrid";
 
 type Location = {
   id: number;
@@ -131,6 +132,171 @@ export default function AdminPage() {
     "name",
   );
   const jobsGrid = useSortablePage<Job>(jobs, jobValue, "name");
+
+  const locationColumns: Column<Location>[] = [
+    { key: "name", label: "Name", sortable: true },
+    {
+      key: "abbreviation",
+      label: "Abbr",
+      sortable: true,
+      render: (l) => l.abbreviation ?? "—",
+    },
+    {
+      key: "address",
+      label: "Address",
+      sortable: true,
+      render: (l) => l.address ?? "—",
+    },
+    {
+      key: "city",
+      label: "City",
+      sortable: true,
+      render: (l) => l.city ?? "—",
+    },
+    {
+      key: "state",
+      label: "State",
+      sortable: true,
+      render: (l) => l.state ?? "—",
+    },
+    { key: "zip", label: "Zip", sortable: true, render: (l) => l.zip ?? "—" },
+    {
+      label: "Manager",
+      render: (l) => (
+        <select
+          value={l.managerId ?? ""}
+          onChange={(e) => {
+            const managerId = e.target.value;
+            if (managerId) {
+              act(`/api/managers/${managerId}/assign`, "POST", {
+                locationId: l.id,
+              });
+            }
+          }}
+        >
+          <option value="">—</option>
+          {users
+            .filter((u) => u.role === "manager" || u.role === "scheduler")
+            .map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.email}
+              </option>
+            ))}
+        </select>
+      ),
+    },
+    {
+      label: "",
+      render: (l) => (
+        <button
+          type="button"
+          onClick={() => setLocationModal({ mode: "edit", loc: l })}
+        >
+          Edit
+        </button>
+      ),
+    },
+  ];
+
+  const departmentColumns: Column<Department>[] = [
+    { key: "name", label: "Name", sortable: true },
+    {
+      key: "departmentCode",
+      label: "Code",
+      sortable: true,
+      render: (d) => d.departmentCode ?? "—",
+    },
+    { key: "locationName", label: "Location", sortable: true },
+    {
+      label: "",
+      render: (d) => (
+        <button
+          type="button"
+          onClick={() => setDepartmentModal({ mode: "edit", dept: d })}
+        >
+          Edit
+        </button>
+      ),
+    },
+  ];
+
+  const adminJobColumns: Column<Job>[] = [
+    { key: "name", label: "Name", sortable: true },
+    { key: "departmentName", label: "Department", sortable: true },
+    { key: "locationName", label: "Location", sortable: true },
+    {
+      key: "workers",
+      label: "Workers",
+      sortable: true,
+      render: (j) => `${j.currentWorkers} / ${j.optimalWorkers}`,
+    },
+    {
+      key: "weeklyHours",
+      label: "Weekly Hours",
+      sortable: true,
+      render: (j) => `${j.weeklyHours} hrs`,
+    },
+    {
+      key: "holidays",
+      label: "Holidays",
+      sortable: true,
+      render: (j) => (j.holidays.length === 0 ? "—" : j.holidays.length),
+    },
+    {
+      label: "",
+      render: (j) => (
+        <button
+          type="button"
+          onClick={() => setJobModal({ mode: "edit", job: j })}
+        >
+          Edit
+        </button>
+      ),
+    },
+  ];
+
+  const userColumns: Column<User>[] = [
+    { key: "email", label: "Email", sortable: true },
+    { key: "uid", label: "UID", render: (u) => u.uid ?? "—" },
+    { key: "role", label: "Role", sortable: true },
+    {
+      key: "disabled",
+      label: "Status",
+      sortable: true,
+      render: (u) => (u.disabled ? "Disabled" : "Active"),
+    },
+    {
+      label: "",
+      render: (u) => (
+        <>
+          <button
+            type="button"
+            onClick={() => setUserModal({ mode: "edit", user: u })}
+          >
+            Edit
+          </button>
+          <button type="button" onClick={() => generatePassword(u.id)}>
+            Reset Password
+          </button>
+          {u.disabled ? (
+            <button
+              type="button"
+              onClick={() => act(`/api/users/${u.id}/enable`, "POST")}
+            >
+              Enable
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => act(`/api/users/${u.id}/disable`, "POST")}
+            >
+              Disable
+            </button>
+          )}
+        </>
+      ),
+    },
+  ];
 
   const load = useCallback(async (authToken: string) => {
     const [l, d, j, u] = await Promise.all([
@@ -361,125 +527,11 @@ export default function AdminPage() {
                 Add Location
               </button>
             </div>
-            <div className="table-scroll">
-              <table className="user-table">
-                <thead>
-                  <tr>
-                    <SortableTh
-                      label="Name"
-                      sortKey="name"
-                      sortBy={locationsGrid.sortBy}
-                      sortDir={locationsGrid.sortDir}
-                      onSort={() => locationsGrid.toggleSort("name")}
-                    />
-                    <SortableTh
-                      label="Abbr"
-                      sortKey="abbreviation"
-                      sortBy={locationsGrid.sortBy}
-                      sortDir={locationsGrid.sortDir}
-                      onSort={() => locationsGrid.toggleSort("abbreviation")}
-                    />
-                    <SortableTh
-                      label="Address"
-                      sortKey="address"
-                      sortBy={locationsGrid.sortBy}
-                      sortDir={locationsGrid.sortDir}
-                      onSort={() => locationsGrid.toggleSort("address")}
-                    />
-                    <SortableTh
-                      label="City"
-                      sortKey="city"
-                      sortBy={locationsGrid.sortBy}
-                      sortDir={locationsGrid.sortDir}
-                      onSort={() => locationsGrid.toggleSort("city")}
-                    />
-                    <SortableTh
-                      label="State"
-                      sortKey="state"
-                      sortBy={locationsGrid.sortBy}
-                      sortDir={locationsGrid.sortDir}
-                      onSort={() => locationsGrid.toggleSort("state")}
-                    />
-                    <SortableTh
-                      label="Zip"
-                      sortKey="zip"
-                      sortBy={locationsGrid.sortBy}
-                      sortDir={locationsGrid.sortDir}
-                      onSort={() => locationsGrid.toggleSort("zip")}
-                    />
-                    <th>Manager</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {locations.length === 0 ? (
-                    <tr>
-                      <td colSpan={8}>No locations yet.</td>
-                    </tr>
-                  ) : (
-                    locationsGrid.pageItems.map((l) => (
-                      <tr key={l.id}>
-                        <td>{l.name}</td>
-                        <td>{l.abbreviation ?? "—"}</td>
-                        <td>{l.address ?? "—"}</td>
-                        <td>{l.city ?? "—"}</td>
-                        <td>{l.state ?? "—"}</td>
-                        <td>{l.zip ?? "—"}</td>
-                        <td>
-                          <select
-                            value={l.managerId ?? ""}
-                            onChange={(e) => {
-                              const managerId = e.target.value;
-                              if (managerId) {
-                                act(
-                                  `/api/managers/${managerId}/assign`,
-                                  "POST",
-                                  {
-                                    locationId: l.id,
-                                  },
-                                );
-                              }
-                            }}
-                          >
-                            <option value="">—</option>
-                            {users
-                              .filter(
-                                (u) =>
-                                  u.role === "manager" ||
-                                  u.role === "scheduler",
-                              )
-                              .map((m) => (
-                                <option key={m.id} value={m.id}>
-                                  {m.email}
-                                </option>
-                              ))}
-                          </select>
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setLocationModal({ mode: "edit", loc: l })
-                            }
-                          >
-                            Edit
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <Pager
-              pageCount={locationsGrid.pageCount}
-              currentPage={locationsGrid.currentPage}
-              onPrev={() =>
-                locationsGrid.setPage(locationsGrid.currentPage - 1)
-              }
-              onNext={() =>
-                locationsGrid.setPage(locationsGrid.currentPage + 1)
-              }
+            <DataGrid
+              grid={locationsGrid}
+              columns={locationColumns}
+              getRowKey={(l) => l.id}
+              emptyText="No locations yet."
             />
           </div>
 
@@ -494,72 +546,11 @@ export default function AdminPage() {
                 Add Department
               </button>
             </div>
-            <div className="table-scroll">
-              <table className="user-table">
-                <thead>
-                  <tr>
-                    <SortableTh
-                      label="Name"
-                      sortKey="name"
-                      sortBy={departmentsGrid.sortBy}
-                      sortDir={departmentsGrid.sortDir}
-                      onSort={() => departmentsGrid.toggleSort("name")}
-                    />
-                    <SortableTh
-                      label="Code"
-                      sortKey="departmentCode"
-                      sortBy={departmentsGrid.sortBy}
-                      sortDir={departmentsGrid.sortDir}
-                      onSort={() =>
-                        departmentsGrid.toggleSort("departmentCode")
-                      }
-                    />
-                    <SortableTh
-                      label="Location"
-                      sortKey="locationName"
-                      sortBy={departmentsGrid.sortBy}
-                      sortDir={departmentsGrid.sortDir}
-                      onSort={() => departmentsGrid.toggleSort("locationName")}
-                    />
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {departments.length === 0 ? (
-                    <tr>
-                      <td colSpan={4}>No departments yet.</td>
-                    </tr>
-                  ) : (
-                    departmentsGrid.pageItems.map((d) => (
-                      <tr key={d.id}>
-                        <td>{d.name}</td>
-                        <td>{d.departmentCode ?? "—"}</td>
-                        <td>{d.locationName}</td>
-                        <td>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setDepartmentModal({ mode: "edit", dept: d })
-                            }
-                          >
-                            Edit
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <Pager
-              pageCount={departmentsGrid.pageCount}
-              currentPage={departmentsGrid.currentPage}
-              onPrev={() =>
-                departmentsGrid.setPage(departmentsGrid.currentPage - 1)
-              }
-              onNext={() =>
-                departmentsGrid.setPage(departmentsGrid.currentPage + 1)
-              }
+            <DataGrid
+              grid={departmentsGrid}
+              columns={departmentColumns}
+              getRowKey={(d) => d.id}
+              emptyText="No departments yet."
             />
           </div>
 
@@ -578,94 +569,11 @@ export default function AdminPage() {
               A job is a position a worker/student is qualified to do, within a
               department at a location.
             </p>
-            <div className="table-scroll">
-              <table className="user-table">
-                <thead>
-                  <tr>
-                    <SortableTh
-                      label="Name"
-                      sortKey="name"
-                      sortBy={jobsGrid.sortBy}
-                      sortDir={jobsGrid.sortDir}
-                      onSort={() => jobsGrid.toggleSort("name")}
-                    />
-                    <SortableTh
-                      label="Department"
-                      sortKey="departmentName"
-                      sortBy={jobsGrid.sortBy}
-                      sortDir={jobsGrid.sortDir}
-                      onSort={() => jobsGrid.toggleSort("departmentName")}
-                    />
-                    <SortableTh
-                      label="Location"
-                      sortKey="locationName"
-                      sortBy={jobsGrid.sortBy}
-                      sortDir={jobsGrid.sortDir}
-                      onSort={() => jobsGrid.toggleSort("locationName")}
-                    />
-                    <SortableTh
-                      label="Workers"
-                      sortKey="workers"
-                      sortBy={jobsGrid.sortBy}
-                      sortDir={jobsGrid.sortDir}
-                      onSort={() => jobsGrid.toggleSort("workers")}
-                    />
-                    <SortableTh
-                      label="Weekly Hours"
-                      sortKey="weeklyHours"
-                      sortBy={jobsGrid.sortBy}
-                      sortDir={jobsGrid.sortDir}
-                      onSort={() => jobsGrid.toggleSort("weeklyHours")}
-                    />
-                    <SortableTh
-                      label="Holidays"
-                      sortKey="holidays"
-                      sortBy={jobsGrid.sortBy}
-                      sortDir={jobsGrid.sortDir}
-                      onSort={() => jobsGrid.toggleSort("holidays")}
-                    />
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {jobs.length === 0 ? (
-                    <tr>
-                      <td colSpan={7}>No jobs yet.</td>
-                    </tr>
-                  ) : (
-                    jobsGrid.pageItems.map((j) => (
-                      <tr key={j.id}>
-                        <td>{j.name}</td>
-                        <td>{j.departmentName}</td>
-                        <td>{j.locationName}</td>
-                        <td>
-                          {j.currentWorkers} / {j.optimalWorkers}
-                        </td>
-                        <td>{j.weeklyHours} hrs</td>
-                        <td>
-                          {j.holidays.length === 0 ? "—" : j.holidays.length}
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setJobModal({ mode: "edit", job: j })
-                            }
-                          >
-                            Edit
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <Pager
-              pageCount={jobsGrid.pageCount}
-              currentPage={jobsGrid.currentPage}
-              onPrev={() => jobsGrid.setPage(jobsGrid.currentPage - 1)}
-              onNext={() => jobsGrid.setPage(jobsGrid.currentPage + 1)}
+            <DataGrid
+              grid={jobsGrid}
+              columns={adminJobColumns}
+              getRowKey={(j) => j.id}
+              emptyText="No jobs yet."
             />
           </div>
 
@@ -690,93 +598,11 @@ export default function AdminPage() {
                 Add User
               </button>
             </div>
-            <div className="table-scroll">
-              <table className="user-table">
-                <thead>
-                  <tr>
-                    <SortableTh
-                      label="Email"
-                      sortKey="email"
-                      sortBy={usersGrid.sortBy}
-                      sortDir={usersGrid.sortDir}
-                      onSort={() => usersGrid.toggleSort("email")}
-                    />
-                    <th>UID</th>
-                    <SortableTh
-                      label="Role"
-                      sortKey="role"
-                      sortBy={usersGrid.sortBy}
-                      sortDir={usersGrid.sortDir}
-                      onSort={() => usersGrid.toggleSort("role")}
-                    />
-                    <SortableTh
-                      label="Status"
-                      sortKey="disabled"
-                      sortBy={usersGrid.sortBy}
-                      sortDir={usersGrid.sortDir}
-                      onSort={() => usersGrid.toggleSort("disabled")}
-                    />
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.length === 0 ? (
-                    <tr>
-                      <td colSpan={5}>No users.</td>
-                    </tr>
-                  ) : (
-                    usersGrid.pageItems.map((u) => (
-                      <tr key={u.id}>
-                        <td>{u.email}</td>
-                        <td>{u.uid ?? "—"}</td>
-                        <td>{u.role}</td>
-                        <td>{u.disabled ? "Disabled" : "Active"}</td>
-                        <td>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setUserModal({ mode: "edit", user: u })
-                            }
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => generatePassword(u.id)}
-                          >
-                            Reset Password
-                          </button>
-                          {u.disabled ? (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                act(`/api/users/${u.id}/enable`, "POST")
-                              }
-                            >
-                              Enable
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                act(`/api/users/${u.id}/disable`, "POST")
-                              }
-                            >
-                              Disable
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <Pager
-              pageCount={usersGrid.pageCount}
-              currentPage={usersGrid.currentPage}
-              onPrev={() => usersGrid.setPage(usersGrid.currentPage - 1)}
-              onNext={() => usersGrid.setPage(usersGrid.currentPage + 1)}
+            <DataGrid
+              grid={usersGrid}
+              columns={userColumns}
+              getRowKey={(u) => u.id}
+              emptyText="No users."
             />
           </div>
         </div>

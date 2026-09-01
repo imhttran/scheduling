@@ -16,15 +16,16 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Dev-only: seeds users/profiles/assignments from seed.csv (repo root) so local
-// testing has data without clicking through the admin UI. Idempotent — rows
-// whose email already exists are skipped. Each row's department is created
+// Dev-only: seeds users/profiles/assignments from seed data (backend/seed) so
+// local testing has data without clicking through the admin UI. Idempotent —
+// rows whose email already exists are skipped. Each row's department is created
 // under its location; managers are scoped to their row's location.
 
-// readSeedCSV finds and parses a CSV file next to the backend (or one dir up).
+// readSeedCSV finds and parses a CSV file in backend/seed (or next to the
+// backend, or one dir up, for legacy layouts).
 func readSeedCSV(name string) ([][]string, error) {
 	path := ""
-	for _, dir := range []string{".", ".."} {
+	for _, dir := range []string{"seed", ".", ".."} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
 			path = filepath.Join(dir, name)
 			break

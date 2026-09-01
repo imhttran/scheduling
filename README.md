@@ -74,7 +74,7 @@ Then log in as each to see `/student` and `/manager`.
 
 ### Seed data
 
-On a fresh database, the backend also seeds the accounts in **`backend/seed.csv`**
+On a fresh database, the backend also seeds the accounts in **`backend/seed/seed.csv`**
 at startup — a manager plus a few students across departments and locations.
 Edit the file and restart the backend to change them (existing emails are
 skipped). To wipe and re-seed in one step, use `./manage.sh → [11]` (Re-seed).

@@ -1,12 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { API_BASE, callApi } from "@/lib/api";
 import { PageHeader } from "@/components/PageHeader";
 import { PageFooter } from "@/components/PageFooter";
 import { PageTitle } from "@/components/PageTitle";
 import { MissRequestModal } from "@/components/MissRequestModal";
-import { Pager, SortableTh, useSortablePage } from "@/lib/pagination";
+import { DataGrid, type Column } from "@/components/DataGrid";
+import { usePager, useSortablePage } from "@/lib/pagination";
 
 type Shift = {
   id: number;
@@ -162,6 +169,52 @@ export default function StudentPage() {
     "date",
   );
 
+  const preferencesGrid = usePager<Preference>(preferences);
+  const prefColumns: Column<Preference>[] = [
+    { key: "dayOfWeek", label: "Day", render: (p) => DAYS[p.dayOfWeek] },
+    { key: "startTime", label: "Start" },
+    { key: "endTime", label: "End" },
+  ];
+
+  const shiftColumns = (action: (s: Shift) => ReactNode): Column<Shift>[] => [
+    { key: "date", label: "Date", sortable: true },
+    { key: "startTime", label: "Start", sortable: true },
+    { key: "endTime", label: "End", sortable: true },
+    { key: "departmentName", label: "Department", sortable: true },
+    { label: "", render: action },
+  ];
+
+  const myCalendarColumns = shiftColumns((s) => (
+    <button type="button" onClick={() => setMissShift(s)}>
+      Request to miss
+    </button>
+  ));
+  const workqueueColumns = shiftColumns((s) => (
+    <button type="button" onClick={() => act(`/api/workqueue/${s.id}/pick`)}>
+      Pick
+    </button>
+  ));
+  const requestColumns: Column<Request>[] = [
+    { key: "date", label: "Date", sortable: true },
+    { key: "startTime", label: "Start", sortable: true },
+    { key: "endTime", label: "End", sortable: true },
+    { key: "type", label: "Type", sortable: true },
+    { key: "status", label: "Status", sortable: true },
+    { key: "reason", label: "Reason", sortable: true },
+    {
+      label: "",
+      render: (r) =>
+        r.status === "pending" ? (
+          <button
+            type="button"
+            onClick={() => act(`/api/me/requests/${r.id}/cancel`)}
+          >
+            Cancel
+          </button>
+        ) : null,
+    },
+  ];
+
   return (
     <div className="dashboard-container wide">
       <PageTitle title="My Schedule" />
@@ -189,257 +242,42 @@ export default function StudentPage() {
               ({weeklyHours} / 20 hrs this week)
             </span>
           </h2>
-          <div className="table-scroll">
-            <table className="user-table">
-              <thead>
-                <tr>
-                  <SortableTh
-                    label="Date"
-                    sortKey="date"
-                    sortBy={calendarGrid.sortBy}
-                    sortDir={calendarGrid.sortDir}
-                    onSort={() => calendarGrid.toggleSort("date")}
-                  />
-                  <SortableTh
-                    label="Start"
-                    sortKey="startTime"
-                    sortBy={calendarGrid.sortBy}
-                    sortDir={calendarGrid.sortDir}
-                    onSort={() => calendarGrid.toggleSort("startTime")}
-                  />
-                  <SortableTh
-                    label="End"
-                    sortKey="endTime"
-                    sortBy={calendarGrid.sortBy}
-                    sortDir={calendarGrid.sortDir}
-                    onSort={() => calendarGrid.toggleSort("endTime")}
-                  />
-                  <SortableTh
-                    label="Department"
-                    sortKey="departmentName"
-                    sortBy={calendarGrid.sortBy}
-                    sortDir={calendarGrid.sortDir}
-                    onSort={() => calendarGrid.toggleSort("departmentName")}
-                  />
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {calendar.length === 0 ? (
-                  <tr>
-                    <td colSpan={5}>No shifts scheduled this week.</td>
-                  </tr>
-                ) : (
-                  calendarGrid.pageItems.map((s) => (
-                    <tr key={s.id}>
-                      <td>{s.date}</td>
-                      <td>{s.startTime}</td>
-                      <td>{s.endTime}</td>
-                      <td>{s.departmentName}</td>
-                      <td>
-                        <button type="button" onClick={() => setMissShift(s)}>
-                          Request to miss
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <Pager
-            pageCount={calendarGrid.pageCount}
-            currentPage={calendarGrid.currentPage}
-            onPrev={() => calendarGrid.setPage(calendarGrid.currentPage - 1)}
-            onNext={() => calendarGrid.setPage(calendarGrid.currentPage + 1)}
+          <DataGrid
+            grid={calendarGrid}
+            columns={myCalendarColumns}
+            getRowKey={(s) => s.id}
+            emptyText="No shifts scheduled this week."
           />
         </div>
 
         <div className="user-list-section">
           <h2>Workqueue</h2>
-          <div className="table-scroll">
-            <table className="user-table">
-              <thead>
-                <tr>
-                  <SortableTh
-                    label="Date"
-                    sortKey="date"
-                    sortBy={workqueueGrid.sortBy}
-                    sortDir={workqueueGrid.sortDir}
-                    onSort={() => workqueueGrid.toggleSort("date")}
-                  />
-                  <SortableTh
-                    label="Start"
-                    sortKey="startTime"
-                    sortBy={workqueueGrid.sortBy}
-                    sortDir={workqueueGrid.sortDir}
-                    onSort={() => workqueueGrid.toggleSort("startTime")}
-                  />
-                  <SortableTh
-                    label="End"
-                    sortKey="endTime"
-                    sortBy={workqueueGrid.sortBy}
-                    sortDir={workqueueGrid.sortDir}
-                    onSort={() => workqueueGrid.toggleSort("endTime")}
-                  />
-                  <SortableTh
-                    label="Department"
-                    sortKey="departmentName"
-                    sortBy={workqueueGrid.sortBy}
-                    sortDir={workqueueGrid.sortDir}
-                    onSort={() => workqueueGrid.toggleSort("departmentName")}
-                  />
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {workqueue.length === 0 ? (
-                  <tr>
-                    <td colSpan={5}>No open shifts in your department.</td>
-                  </tr>
-                ) : (
-                  workqueueGrid.pageItems.map((s) => (
-                    <tr key={s.id}>
-                      <td>{s.date}</td>
-                      <td>{s.startTime}</td>
-                      <td>{s.endTime}</td>
-                      <td>{s.departmentName}</td>
-                      <td>
-                        <button
-                          type="button"
-                          onClick={() => act(`/api/workqueue/${s.id}/pick`)}
-                        >
-                          Pick
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <Pager
-            pageCount={workqueueGrid.pageCount}
-            currentPage={workqueueGrid.currentPage}
-            onPrev={() => workqueueGrid.setPage(workqueueGrid.currentPage - 1)}
-            onNext={() => workqueueGrid.setPage(workqueueGrid.currentPage + 1)}
+          <DataGrid
+            grid={workqueueGrid}
+            columns={workqueueColumns}
+            getRowKey={(s) => s.id}
+            emptyText="No open shifts in your department."
           />
         </div>
 
         <div className="user-list-section">
           <h2>My Requests</h2>
-          <div className="table-scroll">
-            <table className="user-table">
-              <thead>
-                <tr>
-                  <SortableTh
-                    label="Date"
-                    sortKey="date"
-                    sortBy={requestsGrid.sortBy}
-                    sortDir={requestsGrid.sortDir}
-                    onSort={() => requestsGrid.toggleSort("date")}
-                  />
-                  <SortableTh
-                    label="Start"
-                    sortKey="startTime"
-                    sortBy={requestsGrid.sortBy}
-                    sortDir={requestsGrid.sortDir}
-                    onSort={() => requestsGrid.toggleSort("startTime")}
-                  />
-                  <SortableTh
-                    label="End"
-                    sortKey="endTime"
-                    sortBy={requestsGrid.sortBy}
-                    sortDir={requestsGrid.sortDir}
-                    onSort={() => requestsGrid.toggleSort("endTime")}
-                  />
-                  <SortableTh
-                    label="Type"
-                    sortKey="type"
-                    sortBy={requestsGrid.sortBy}
-                    sortDir={requestsGrid.sortDir}
-                    onSort={() => requestsGrid.toggleSort("type")}
-                  />
-                  <SortableTh
-                    label="Status"
-                    sortKey="status"
-                    sortBy={requestsGrid.sortBy}
-                    sortDir={requestsGrid.sortDir}
-                    onSort={() => requestsGrid.toggleSort("status")}
-                  />
-                  <SortableTh
-                    label="Reason"
-                    sortKey="reason"
-                    sortBy={requestsGrid.sortBy}
-                    sortDir={requestsGrid.sortDir}
-                    onSort={() => requestsGrid.toggleSort("reason")}
-                  />
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {requests.length === 0 ? (
-                  <tr>
-                    <td colSpan={7}>No requests yet.</td>
-                  </tr>
-                ) : (
-                  requestsGrid.pageItems.map((r) => (
-                    <tr key={r.id}>
-                      <td>{r.date}</td>
-                      <td>{r.startTime}</td>
-                      <td>{r.endTime}</td>
-                      <td>{r.type}</td>
-                      <td>{r.status}</td>
-                      <td>{r.reason ?? ""}</td>
-                      <td>
-                        {r.status === "pending" && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              act(`/api/me/requests/${r.id}/cancel`)
-                            }
-                          >
-                            Cancel
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          <Pager
-            pageCount={requestsGrid.pageCount}
-            currentPage={requestsGrid.currentPage}
-            onPrev={() => requestsGrid.setPage(requestsGrid.currentPage - 1)}
-            onNext={() => requestsGrid.setPage(requestsGrid.currentPage + 1)}
+          <DataGrid
+            grid={requestsGrid}
+            columns={requestColumns}
+            getRowKey={(r) => r.id}
+            emptyText="No requests yet."
           />
         </div>
 
         <div className="user-list-section">
           <h2>Preferred Days &amp; Times</h2>
           {preferences.length > 0 && (
-            <div className="table-scroll">
-              <table className="user-table">
-                <thead>
-                  <tr>
-                    <th>Day</th>
-                    <th>Start</th>
-                    <th>End</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {preferences.map((p, i) => (
-                    <tr key={i}>
-                      <td>{DAYS[p.dayOfWeek]}</td>
-                      <td>{p.startTime}</td>
-                      <td>{p.endTime}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <DataGrid
+              grid={preferencesGrid}
+              columns={prefColumns}
+              getRowKey={(p) => p.dayOfWeek}
+            />
           )}
           <form className="add-user-form" onSubmit={handlePreference}>
             <select name="dayOfWeek" defaultValue="1">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 /** Approx. height of one table body row (see .user-table padding/line-height). */
 export const DEFAULT_ROW_HEIGHT = 40;
@@ -163,7 +163,7 @@ export function SortableTh({
   sortDir,
   onSort,
 }: {
-  label: string;
+  label: ReactNode;
   sortKey: string;
   sortBy: string;
   sortDir: "asc" | "desc";

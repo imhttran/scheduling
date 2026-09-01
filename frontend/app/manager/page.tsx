@@ -8,7 +8,8 @@ import { PageTitle } from "@/components/PageTitle";
 import { Modal } from "@/components/Modal";
 import { JobModal, type JobInput } from "@/components/JobModal";
 import { hasRole } from "@/lib/roles";
-import { Pager, SortableTh, useSortablePage } from "@/lib/pagination";
+import { useSortablePage } from "@/lib/pagination";
+import { DataGrid, type Column } from "@/components/DataGrid";
 
 type StudentJob = {
   jobId: number;
@@ -143,6 +144,161 @@ export default function ManagerPage() {
     (r, key) => r[key as keyof Request],
     "date",
   );
+
+  const studentColumns: Column<Student>[] = [
+    { key: "email", label: "Email", sortable: true },
+    { key: "workerTypeLabel", label: "Type", sortable: true },
+    {
+      key: "weekHoursUsed",
+      label: "Hours",
+      render: (s) => `${s.weekHoursUsed} / ${s.weekHoursCap} hrs`,
+    },
+    {
+      key: "jobs",
+      label: "Jobs",
+      render: (s) =>
+        s.jobs.length === 0 ? "—" : s.jobs.map((j) => j.jobName).join(", "),
+    },
+    {
+      label: "",
+      render: (s) => (
+        <button
+          type="button"
+          onClick={() => {
+            setStudentModal(s);
+            loadWorkerCalendar(s.id);
+            loadWorkerPrefs(s.id);
+          }}
+        >
+          Edit
+        </button>
+      ),
+    },
+  ];
+
+  const jobColumns: Column<Job>[] = [
+    { key: "name", label: "Job", sortable: true },
+    { key: "departmentName", label: "Department", sortable: true },
+    ...DAYS.map((d, dow) => ({
+      label: d,
+      render: (j: Job) => {
+        const s = j.schedules.find((x) => x.dayOfWeek === dow);
+        return s ? `${s.startTime}–${s.endTime}` : "—";
+      },
+    })),
+    {
+      key: "weeklyHours",
+      label: "Weekly",
+      sortable: true,
+      render: (j) => `${j.weeklyHours} hrs`,
+    },
+    {
+      key: "workers",
+      label: "Workers",
+      sortable: true,
+      render: (j) => `${j.currentWorkers} / ${j.optimalWorkers}`,
+    },
+    ...(canManageJobs
+      ? [
+          {
+            label: "",
+            render: (j: Job) => (
+              <button type="button" onClick={() => setJobModal(j)}>
+                Edit
+              </button>
+            ),
+          },
+        ]
+      : []),
+  ];
+
+  const shiftColumns: Column<Shift>[] = [
+    { key: "departmentName", label: "Department", sortable: true },
+    { key: "date", label: "Date", sortable: true },
+    {
+      key: "startTime",
+      label: "Time",
+      sortable: true,
+      render: (sh) => `${sh.startTime}–${sh.endTime}`,
+    },
+    { key: "status", label: "Status", sortable: true },
+    {
+      key: "assignedEmail",
+      label: "Assigned Worker",
+      sortable: true,
+      render: (sh) => sh.assignedEmail ?? "—",
+    },
+    ...(canAssign
+      ? [
+          {
+            label: "",
+            render: (sh: Shift) => (
+              <form
+                className="schedule-row assign-form"
+                onSubmit={(e) => assignShift(e, sh.id)}
+              >
+                <select name="userId" defaultValue={sh.assignedUserId ?? ""}>
+                  <option value="">Unassigned</option>
+                  {students
+                    .filter(
+                      (st) =>
+                        st.id === sh.assignedUserId ||
+                        st.weekHoursUsed +
+                          hoursBetween(sh.startTime, sh.endTime) <=
+                          st.weekHoursCap,
+                    )
+                    .map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.email} ({st.weekHoursUsed}/{st.weekHoursCap}h)
+                      </option>
+                    ))}
+                </select>
+                <button type="submit" className="login-button">
+                  Assign
+                </button>
+              </form>
+            ),
+          },
+        ]
+      : []),
+  ];
+
+  const requestColumns: Column<Request>[] = [
+    { key: "email", label: "Worker", sortable: true },
+    { key: "date", label: "Date", sortable: true },
+    {
+      key: "startTime",
+      label: "Time",
+      sortable: true,
+      render: (r) => `${r.startTime}–${r.endTime}`,
+    },
+    { key: "type", label: "Type", sortable: true },
+    {
+      key: "reason",
+      label: "Reason",
+      sortable: true,
+      render: (r) => r.reason ?? "—",
+    },
+    {
+      label: "",
+      render: (r) => (
+        <>
+          <button
+            type="button"
+            onClick={() => act(`/api/requests/${r.id}/approve`)}
+          >
+            Approve
+          </button>
+          <button
+            type="button"
+            onClick={() => act(`/api/requests/${r.id}/deny`)}
+          >
+            Deny
+          </button>
+        </>
+      ),
+    },
+  ];
 
   const load = useCallback(async (authToken: string) => {
     const [s, j, sh, d, r] = await Promise.all([
@@ -412,64 +568,11 @@ export default function ManagerPage() {
               full-time staff at 40 (+20 overtime); hourly staff at a
               manager-set limit. Overtime needs manager approval.
             </p>
-            <div className="table-scroll">
-              <table className="user-table">
-                <thead>
-                  <tr>
-                    <SortableTh
-                      label="Email"
-                      sortKey="email"
-                      sortBy={studentsGrid.sortBy}
-                      sortDir={studentsGrid.sortDir}
-                      onSort={() => studentsGrid.toggleSort("email")}
-                    />
-                    <th>Type</th>
-                    <th>Hours</th>
-                    <th>Jobs</th>
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {students.length === 0 ? (
-                    <tr>
-                      <td colSpan={5}>No workers in your location.</td>
-                    </tr>
-                  ) : (
-                    studentsGrid.pageItems.map((s) => (
-                      <tr key={s.id}>
-                        <td>{s.email}</td>
-                        <td>{s.workerTypeLabel}</td>
-                        <td>
-                          {s.weekHoursUsed} / {s.weekHoursCap} hrs
-                        </td>
-                        <td>
-                          {s.jobs.length === 0
-                            ? "—"
-                            : s.jobs.map((j) => j.jobName).join(", ")}
-                        </td>
-                        <td>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setStudentModal(s);
-                              loadWorkerCalendar(s.id);
-                              loadWorkerPrefs(s.id);
-                            }}
-                          >
-                            Edit
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <Pager
-              pageCount={studentsGrid.pageCount}
-              currentPage={studentsGrid.currentPage}
-              onPrev={() => studentsGrid.setPage(studentsGrid.currentPage - 1)}
-              onNext={() => studentsGrid.setPage(studentsGrid.currentPage + 1)}
+            <DataGrid
+              grid={studentsGrid}
+              columns={studentColumns}
+              getRowKey={(s) => s.id}
+              emptyText="No workers in your location."
             />
           </div>
 
@@ -505,89 +608,11 @@ export default function ManagerPage() {
               coverage (current / optimal) for each job in your location. Days
               with no hours are closed (weekend, holiday).
             </p>
-            <div className="table-scroll">
-              <table className="user-table">
-                <thead>
-                  <tr>
-                    <SortableTh
-                      label="Job"
-                      sortKey="name"
-                      sortBy={jobsGrid.sortBy}
-                      sortDir={jobsGrid.sortDir}
-                      onSort={() => jobsGrid.toggleSort("name")}
-                    />
-                    <SortableTh
-                      label="Department"
-                      sortKey="departmentName"
-                      sortBy={jobsGrid.sortBy}
-                      sortDir={jobsGrid.sortDir}
-                      onSort={() => jobsGrid.toggleSort("departmentName")}
-                    />
-                    {DAYS.map((d) => (
-                      <th key={d}>{d}</th>
-                    ))}
-                    <SortableTh
-                      label="Weekly"
-                      sortKey="weeklyHours"
-                      sortBy={jobsGrid.sortBy}
-                      sortDir={jobsGrid.sortDir}
-                      onSort={() => jobsGrid.toggleSort("weeklyHours")}
-                    />
-                    <SortableTh
-                      label="Workers"
-                      sortKey="workers"
-                      sortBy={jobsGrid.sortBy}
-                      sortDir={jobsGrid.sortDir}
-                      onSort={() => jobsGrid.toggleSort("workers")}
-                    />
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {jobs.length === 0 ? (
-                    <tr>
-                      <td colSpan={11}>No jobs in your location.</td>
-                    </tr>
-                  ) : (
-                    jobsGrid.pageItems.map((j) => (
-                      <tr key={j.id}>
-                        <td>{j.name}</td>
-                        <td>{j.departmentName}</td>
-                        {DAYS.map((_, dow) => {
-                          const s = j.schedules.find(
-                            (x) => x.dayOfWeek === dow,
-                          );
-                          return (
-                            <td key={dow}>
-                              {s ? `${s.startTime}–${s.endTime}` : "—"}
-                            </td>
-                          );
-                        })}
-                        <td>{j.weeklyHours} hrs</td>
-                        <td>
-                          {j.currentWorkers} / {j.optimalWorkers}
-                        </td>
-                        <td>
-                          {canManageJobs && (
-                            <button
-                              type="button"
-                              onClick={() => setJobModal(j)}
-                            >
-                              Edit
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <Pager
-              pageCount={jobsGrid.pageCount}
-              currentPage={jobsGrid.currentPage}
-              onPrev={() => jobsGrid.setPage(jobsGrid.currentPage - 1)}
-              onNext={() => jobsGrid.setPage(jobsGrid.currentPage + 1)}
+            <DataGrid
+              grid={jobsGrid}
+              columns={jobColumns}
+              getRowKey={(j) => j.id}
+              emptyText="No jobs in your location."
             />
           </div>
 
@@ -610,196 +635,21 @@ export default function ManagerPage() {
                 ? "Assign a slot to a worker (or unassign it) to build the schedule."
                 : "Open shifts students can pick from, or return missed shifts here."}
             </p>
-            <div className="table-scroll">
-              <table className="user-table">
-                <thead>
-                  <tr>
-                    <SortableTh
-                      label="Department"
-                      sortKey="departmentName"
-                      sortBy={shiftsGrid.sortBy}
-                      sortDir={shiftsGrid.sortDir}
-                      onSort={() => shiftsGrid.toggleSort("departmentName")}
-                    />
-                    <SortableTh
-                      label="Date"
-                      sortKey="date"
-                      sortBy={shiftsGrid.sortBy}
-                      sortDir={shiftsGrid.sortDir}
-                      onSort={() => shiftsGrid.toggleSort("date")}
-                    />
-                    <SortableTh
-                      label="Time"
-                      sortKey="startTime"
-                      sortBy={shiftsGrid.sortBy}
-                      sortDir={shiftsGrid.sortDir}
-                      onSort={() => shiftsGrid.toggleSort("startTime")}
-                    />
-                    <SortableTh
-                      label="Status"
-                      sortKey="status"
-                      sortBy={shiftsGrid.sortBy}
-                      sortDir={shiftsGrid.sortDir}
-                      onSort={() => shiftsGrid.toggleSort("status")}
-                    />
-                    <SortableTh
-                      label="Assigned Worker"
-                      sortKey="assignedEmail"
-                      sortBy={shiftsGrid.sortBy}
-                      sortDir={shiftsGrid.sortDir}
-                      onSort={() => shiftsGrid.toggleSort("assignedEmail")}
-                    />
-                    {canAssign && <th></th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {shifts.length === 0 ? (
-                    <tr>
-                      <td colSpan={canAssign ? 6 : 5}>No shifts yet.</td>
-                    </tr>
-                  ) : (
-                    shiftsGrid.pageItems.map((sh) => (
-                      <tr key={sh.id}>
-                        <td>{sh.departmentName}</td>
-                        <td>{sh.date}</td>
-                        <td>
-                          {sh.startTime}–{sh.endTime}
-                        </td>
-                        <td>{sh.status}</td>
-                        <td>{sh.assignedEmail ?? "—"}</td>
-                        {canAssign && (
-                          <td>
-                            <form
-                              className="schedule-row assign-form"
-                              onSubmit={(e) => assignShift(e, sh.id)}
-                            >
-                              <select
-                                name="userId"
-                                defaultValue={sh.assignedUserId ?? ""}
-                              >
-                                <option value="">Unassigned</option>
-                                {students
-                                  .filter(
-                                    (st) =>
-                                      st.id === sh.assignedUserId ||
-                                      st.weekHoursUsed +
-                                        hoursBetween(
-                                          sh.startTime,
-                                          sh.endTime,
-                                        ) <=
-                                        st.weekHoursCap,
-                                  )
-                                  .map((st) => (
-                                    <option key={st.id} value={st.id}>
-                                      {st.email} ({st.weekHoursUsed}/
-                                      {st.weekHoursCap}h)
-                                    </option>
-                                  ))}
-                              </select>
-                              <button type="submit" className="login-button">
-                                Assign
-                              </button>
-                            </form>
-                          </td>
-                        )}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <Pager
-              pageCount={shiftsGrid.pageCount}
-              currentPage={shiftsGrid.currentPage}
-              onPrev={() => shiftsGrid.setPage(shiftsGrid.currentPage - 1)}
-              onNext={() => shiftsGrid.setPage(shiftsGrid.currentPage + 1)}
+            <DataGrid
+              grid={shiftsGrid}
+              columns={shiftColumns}
+              getRowKey={(sh) => sh.id}
+              emptyText="No shifts yet."
             />
           </div>
 
           <div className="user-list-section" id="requests">
             <h2>Pending Requests</h2>
-            <div className="table-scroll">
-              <table className="user-table">
-                <thead>
-                  <tr>
-                    <SortableTh
-                      label="Worker"
-                      sortKey="email"
-                      sortBy={requestsGrid.sortBy}
-                      sortDir={requestsGrid.sortDir}
-                      onSort={() => requestsGrid.toggleSort("email")}
-                    />
-                    <SortableTh
-                      label="Date"
-                      sortKey="date"
-                      sortBy={requestsGrid.sortBy}
-                      sortDir={requestsGrid.sortDir}
-                      onSort={() => requestsGrid.toggleSort("date")}
-                    />
-                    <SortableTh
-                      label="Time"
-                      sortKey="startTime"
-                      sortBy={requestsGrid.sortBy}
-                      sortDir={requestsGrid.sortDir}
-                      onSort={() => requestsGrid.toggleSort("startTime")}
-                    />
-                    <SortableTh
-                      label="Type"
-                      sortKey="type"
-                      sortBy={requestsGrid.sortBy}
-                      sortDir={requestsGrid.sortDir}
-                      onSort={() => requestsGrid.toggleSort("type")}
-                    />
-                    <SortableTh
-                      label="Reason"
-                      sortKey="reason"
-                      sortBy={requestsGrid.sortBy}
-                      sortDir={requestsGrid.sortDir}
-                      onSort={() => requestsGrid.toggleSort("reason")}
-                    />
-                    <th></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {requests.length === 0 ? (
-                    <tr>
-                      <td colSpan={6}>No pending requests.</td>
-                    </tr>
-                  ) : (
-                    requestsGrid.pageItems.map((r) => (
-                      <tr key={r.id}>
-                        <td>{r.email}</td>
-                        <td>{r.date}</td>
-                        <td>
-                          {r.startTime}–{r.endTime}
-                        </td>
-                        <td>{r.type}</td>
-                        <td>{r.reason ?? "—"}</td>
-                        <td>
-                          <button
-                            type="button"
-                            onClick={() => act(`/api/requests/${r.id}/approve`)}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => act(`/api/requests/${r.id}/deny`)}
-                          >
-                            Deny
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <Pager
-              pageCount={requestsGrid.pageCount}
-              currentPage={requestsGrid.currentPage}
-              onPrev={() => requestsGrid.setPage(requestsGrid.currentPage - 1)}
-              onNext={() => requestsGrid.setPage(requestsGrid.currentPage + 1)}
+            <DataGrid
+              grid={requestsGrid}
+              columns={requestColumns}
+              getRowKey={(r) => r.id}
+              emptyText="No pending requests."
             />
           </div>
         </div>
