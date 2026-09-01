@@ -122,6 +122,90 @@ func adminCreateUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Manager-only: creates a worker (student or staff) in the manager's location.
+// The worker is verified (the manager vouches) and forced to change their
+// password on first login.
+func createWorker(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email     string `json:"email"`
+		Password  string `json:"password"`
+		FirstName string `json:"firstName"`
+		LastName  string `json:"lastName"`
+		Role      string `json:"role"`
+		JobID     int    `json:"jobId"`
+		MinHours  int    `json:"minHours"`
+		MaxHours  int    `json:"maxHours"`
+	}
+	decodeJSON(r, &body)
+	if !validateEmail(body.Email) {
+		respond(w, http.StatusBadRequest, fail(http.StatusBadRequest, "Invalid email address"))
+		return
+	}
+	if passwordError := validatePassword(body.Password); passwordError != "" {
+		respond(w, http.StatusBadRequest, fail(http.StatusBadRequest, passwordError))
+		return
+	}
+	if body.Role != "student" && body.Role != "staff" {
+		respond(w, http.StatusBadRequest, msg("role must be student or staff"))
+		return
+	}
+	if body.FirstName == "" || body.LastName == "" {
+		respond(w, http.StatusBadRequest, msg("firstName and lastName are required"))
+		return
+	}
+	// The job must be in the caller's location (non-admin).
+	if !hasRole(currentUser(r).Role, "admin") {
+		locID, err := managerLocationID(r.Context(), currentUser(r).ID)
+		if err != nil {
+			respond500(w, "Create Worker Error", err, false)
+			return
+		}
+		var ok bool
+		if err := db.QueryRow(r.Context(),
+			`SELECT EXISTS (SELECT 1 FROM jobs j JOIN departments d ON d.id = j.department_id WHERE j.id = $1 AND d.location_id = $2)`,
+			body.JobID, locID).Scan(&ok); err != nil || !ok {
+			respond(w, http.StatusForbidden, msg("Job not in your location"))
+			return
+		}
+	}
+	var id int
+	var email, role string
+	err := db.QueryRow(r.Context(), `
+		INSERT INTO users (email, password, role, email_verified, must_change_password)
+		VALUES ($1, $2, $3, true, true)
+		RETURNING id, email, role`,
+		body.Email, hashPassword(body.Password), body.Role).
+		Scan(&id, &email, &role)
+	if err != nil {
+		if isUniqueViolation(err) {
+			respond(w, http.StatusBadRequest, fail(http.StatusBadRequest, "Email is already registered"))
+			return
+		}
+		respond500(w, "Create Worker Error", err, true)
+		return
+	}
+	// Create the profile (placeholders the worker can update later).
+	if _, err := db.Exec(r.Context(), `
+		INSERT INTO user_profiles (user_id, first_name, last_name, address, state, zip, phone)
+		VALUES ($1, $2, $3, 'N/A', 'N/A', '00000', 'N/A')`,
+		id, body.FirstName, body.LastName); err != nil {
+		respond500(w, "Create Worker Error", err, true)
+		return
+	}
+	// Assign the job so the worker sees the workqueue.
+	if _, err := db.Exec(r.Context(), `
+		INSERT INTO student_jobs (user_id, job_id, min_hours, max_hours)
+		VALUES ($1, $2, $3, $4)`,
+		id, body.JobID, body.MinHours, body.MaxHours); err != nil {
+		respond500(w, "Create Worker Error", err, true)
+		return
+	}
+	respond(w, http.StatusCreated, map[string]any{
+		"success": true, "message": "Worker created",
+		"user": map[string]any{"id": id, "email": email, "role": role},
+	})
+}
+
 // Staff can nudge a not-yet-verified user's verification email along.
 func staffResendVerification(w http.ResponseWriter, r *http.Request) {
 	var id int

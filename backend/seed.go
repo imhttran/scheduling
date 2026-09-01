@@ -481,6 +481,32 @@ func seedStaff(ctx context.Context) {
 	}
 }
 
+// Dev-only: converts a few students into staff (full-time and part-time) so the
+// staff screen and worker management have variety.
+func seedStaffConversions(ctx context.Context) {
+	if cfg.Env != "development" {
+		return
+	}
+	limit := func(n int) *int { return &n }
+	conversions := []struct {
+		email       string
+		workerType  string
+		hourlyLimit *int
+	}{
+		{"student1@mail.com", "fulltime", nil},
+		{"student2@mail.com", "hourly", limit(20)},
+		{"student3@mail.com", "fulltime", nil},
+		{"student4@mail.com", "hourly", limit(15)},
+	}
+	for _, c := range conversions {
+		if _, err := db.Exec(ctx, `
+			UPDATE users SET role = 'staff', worker_type = $1, hourly_limit = $2
+			WHERE email = $3`, c.workerType, c.hourlyLimit, c.email); err != nil {
+			log.Printf("[seed] staff conversion %s: %v", c.email, err)
+		}
+	}
+}
+
 // Dev-only: seeds a few pending schedule_requests (miss/overflow) per student so
 // the manager approval view has data. Idempotent — students who already have
 // requests are skipped.

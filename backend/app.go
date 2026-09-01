@@ -201,6 +201,9 @@ func newRouter() http.Handler {
 			r.With(requireRole("admin"), parseID).Post("/managers/{id}/assign", assignManager)
 
 			r.With(requireRole("manager")).Get("/students", listStudents)
+			r.With(requireRoleIn("manager", "admin")).Post("/workers", createWorker)
+			r.With(requireRole("manager"), parseID).Get("/workers/{id}/calendar", workerCalendar)
+			r.With(requireRole("manager"), parseID).Get("/workers/{id}/preferences", workerPreferences)
 			r.With(requireRole("manager"), parseID).Post("/students/{id}/jobs", assignStudentJob)
 			r.With(requireRole("manager"), parseID, parseJobID).Delete("/students/{id}/jobs/{jobId}", removeStudentJob)
 			r.With(requireRole("manager"), parseID).Post("/students/{id}/schedule", addWeeklySchedule)

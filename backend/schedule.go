@@ -1353,6 +1353,96 @@ func myCalendar(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, map[string]any{"calendar": calendar})
 }
 
+// Manager-scoped: a worker's assigned shifts for the current week.
+func workerCalendar(w http.ResponseWriter, r *http.Request) {
+	u := currentUser(r)
+	// The worker must be in the caller's location (non-admin).
+	if !hasRole(u.Role, "admin") {
+		locID, err := managerLocationID(r.Context(), u.ID)
+		if err != nil {
+			respond500(w, "Worker Calendar Error", err, false)
+			return
+		}
+		var ok bool
+		if err := db.QueryRow(r.Context(), `
+			SELECT EXISTS (
+				SELECT 1 FROM student_jobs sj
+				JOIN jobs j ON j.id = sj.job_id
+				JOIN departments d ON d.id = j.department_id
+				WHERE sj.user_id = $1 AND d.location_id = $2)`, targetID(r), locID).Scan(&ok); err != nil || !ok {
+			respond(w, http.StatusForbidden, msg("Worker not in your location"))
+			return
+		}
+	}
+	monday := weekMondayOf(time.Now())
+	rows, err := db.Query(r.Context(), `
+		SELECT w.id, w.date, w.start_time, w.end_time, d.name
+		FROM workqueue w JOIN departments d ON d.id = w.department_id
+		WHERE w.assigned_user_id = $1 AND w.date >= $2 AND w.date < $3
+		ORDER BY w.date, w.start_time`,
+		targetID(r), monday, monday.AddDate(0, 0, 7))
+	if err != nil {
+		respond500(w, "Worker Calendar Error", err, false)
+		return
+	}
+	defer rows.Close()
+	calendar := []map[string]any{}
+	for rows.Next() {
+		var id int
+		var date time.Time
+		var start, end, dept string
+		if err := rows.Scan(&id, &date, &start, &end, &dept); err != nil {
+			respond500(w, "Worker Calendar Error", err, false)
+			return
+		}
+		calendar = append(calendar, map[string]any{
+			"id": id, "date": date.Format("2006-01-02"), "startTime": start, "endTime": end, "departmentName": dept,
+		})
+	}
+	respond(w, http.StatusOK, map[string]any{"calendar": calendar})
+}
+
+// Manager-scoped: a worker's preferred days/times.
+func workerPreferences(w http.ResponseWriter, r *http.Request) {
+	u := currentUser(r)
+	if !hasRole(u.Role, "admin") {
+		locID, err := managerLocationID(r.Context(), u.ID)
+		if err != nil {
+			respond500(w, "Worker Preferences Error", err, false)
+			return
+		}
+		var ok bool
+		if err := db.QueryRow(r.Context(), `
+			SELECT EXISTS (
+				SELECT 1 FROM student_jobs sj
+				JOIN jobs j ON j.id = sj.job_id
+				JOIN departments d ON d.id = j.department_id
+				WHERE sj.user_id = $1 AND d.location_id = $2)`, targetID(r), locID).Scan(&ok); err != nil || !ok {
+			respond(w, http.StatusForbidden, msg("Worker not in your location"))
+			return
+		}
+	}
+	rows, err := db.Query(r.Context(), `
+		SELECT day_of_week, start_time, end_time FROM preferred_times
+		WHERE user_id = $1 ORDER BY day_of_week, start_time`, targetID(r))
+	if err != nil {
+		respond500(w, "Worker Preferences Error", err, false)
+		return
+	}
+	defer rows.Close()
+	prefs := []map[string]any{}
+	for rows.Next() {
+		var dow int
+		var start, end string
+		if err := rows.Scan(&dow, &start, &end); err != nil {
+			respond500(w, "Worker Preferences Error", err, false)
+			return
+		}
+		prefs = append(prefs, map[string]any{"dayOfWeek": dow, "startTime": start, "endTime": end})
+	}
+	respond(w, http.StatusOK, map[string]any{"preferences": prefs})
+}
+
 func myWorkqueue(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	deptIDs, err := studentDepartmentIDs(r.Context(), u.ID)
