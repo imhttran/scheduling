@@ -46,6 +46,12 @@ func main() {
 	migrate(ctx)
 	seedDevAdmin(ctx)
 	seedFromCSV(ctx)
+	seedWorkqueue(ctx)
+	seedStudentAvailability(ctx)
+	seedStudentShifts(ctx)
+	seedRequests(ctx)
+	seedJobHolidays(ctx)
+	seedWeeklySchedules(ctx)
 
 	go startEmailWorker(ctx)
 
