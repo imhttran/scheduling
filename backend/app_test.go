@@ -76,7 +76,7 @@ func newTestEnv(t *testing.T) (*httptest.Server, string, string) {
 		JWTSecret:                 "test-secret",
 		EmailVerificationRequired: false, // same bypass the Node tests use
 		FrontendURL:               "http://localhost:3000",
-		MailFrom:                  "no-reply@example.com",
+		MailFrom:                  "no-reply@example.edu",
 		MaxAttempts:               3,
 	}
 	t.Cleanup(func() { cfg = originalConfig })
@@ -85,7 +85,7 @@ func newTestEnv(t *testing.T) (*httptest.Server, string, string) {
 	t.Cleanup(server.Close)
 
 	testRun++
-	email := fmt.Sprintf("gotest-%d-%d@mail.com", time.Now().UnixNano(), testRun)
+	email := fmt.Sprintf("gotest-%d-%d@mail.edu", time.Now().UnixNano(), testRun)
 	password := "Valid123!"
 	return server, email, password
 }

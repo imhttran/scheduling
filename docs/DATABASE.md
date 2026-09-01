@@ -60,7 +60,7 @@ Tables:
 | `email_queue`   | outbound mail (processed by the worker in `backend/queue.go`) |
 
 Dev seed (in `backend/main.go`, only when `NODE_ENV=development`): upserts
-`admin@mail.com` / `Password1234!` plus their profile, so the dev admin isn't
+`admin@mail.edu` / `Password1234!` plus their profile, so the dev admin isn't
 blocked by onboarding gates.
 
 ## Day-to-day operations

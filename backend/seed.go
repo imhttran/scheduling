@@ -296,10 +296,87 @@ func seedStudentAvailability(ctx context.Context) {
 	}
 }
 
-// Dev-only: assigns some open workqueue shifts to students in their
-// departments, up to a reasonable weekly load (12-20h). Only touches open
-// shifts, so it's naturally idempotent.
-func seedStudentShifts(ctx context.Context) {
+// assignShift is an open workqueue shift eligible for assignment.
+type assignShift struct {
+	id, dept, week int
+	hours          float64
+}
+
+// assignWorker is a worker eligible to take shifts, with their weekly cap.
+type assignWorker struct {
+	id    int
+	depts map[int]bool
+	cap   float64
+}
+
+type weekUsage struct{ w0, w1 float64 }
+
+// planAssignments picks which open shifts to assign to which workers so that
+// roughly targetFraction of the total shift hours are filled, respecting each
+// worker's weekly cap. It returns a map of shift id -> worker id. Inputs are not
+// modified; the result varies run to run (shuffled).
+func planAssignments(shifts []assignShift, workers []assignWorker, targetFraction float64) map[int]int {
+	var total float64
+	for _, s := range shifts {
+		total += s.hours
+	}
+	target := total * targetFraction
+
+	order := make([]int, len(workers))
+	for i := range workers {
+		order[i] = i
+	}
+	rand.Shuffle(len(order), func(i, j int) { order[i], order[j] = order[j], order[i] })
+
+	shuffled := make([]assignShift, len(shifts))
+	copy(shuffled, shifts)
+	rand.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+
+	used := make([]weekUsage, len(workers))
+	plan := map[int]int{}
+	assignedHours := 0.0
+	for _, s := range shuffled {
+		if assignedHours >= target {
+			break
+		}
+		// Candidate workers in this department with weekly capacity.
+		var candidates []int
+		for _, wi := range order {
+			w := workers[wi]
+			if !w.depts[s.dept] {
+				continue
+			}
+			var weekHours float64
+			if s.week == 0 {
+				weekHours = used[wi].w0
+			} else {
+				weekHours = used[wi].w1
+			}
+			if weekHours+s.hours <= w.cap {
+				candidates = append(candidates, wi)
+			}
+		}
+		if len(candidates) == 0 {
+			continue
+		}
+		rand.Shuffle(len(candidates), func(i, j int) { candidates[i], candidates[j] = candidates[j], candidates[i] })
+		wi := candidates[0]
+		if s.week == 0 {
+			used[wi].w0 += s.hours
+		} else {
+			used[wi].w1 += s.hours
+		}
+		plan[s.id] = workers[wi].id
+		assignedHours += s.hours
+	}
+	return plan
+}
+
+// Dev-only: assigns open workqueue shifts to workers (students and staff) until
+// roughly 80% of the workqueue is filled, leaving ~20% open so there's room to
+// create new data. Respects each worker's weekly cap (worker_type). Idempotent —
+// only touches open shifts.
+func seedAssignments(ctx context.Context) {
 	if cfg.Env != "development" {
 		return
 	}
@@ -308,87 +385,108 @@ func seedStudentShifts(ctx context.Context) {
 		FROM student_jobs sj JOIN jobs j ON j.id = sj.job_id
 		WHERE sj.active`)
 	if err != nil {
-		log.Printf("[seed] shifts: %v", err)
+		log.Printf("[seed] assignments: %v", err)
 		return
 	}
-	defer rows.Close()
-	depts := map[int][]int{}
+	workers := map[int]*assignWorker{}
+	var order []int
 	for rows.Next() {
 		var uid, dept int
 		if err := rows.Scan(&uid, &dept); err != nil {
-			log.Printf("[seed] shifts: %v", err)
+			rows.Close()
+			log.Printf("[seed] assignments: %v", err)
 			return
 		}
-		depts[uid] = append(depts[uid], dept)
+		w, ok := workers[uid]
+		if !ok {
+			w = &assignWorker{id: uid, depts: map[int]bool{}}
+			workers[uid] = w
+			order = append(order, uid)
+		}
+		w.depts[dept] = true
 	}
+	rows.Close()
 	if err := rows.Err(); err != nil {
-		log.Printf("[seed] shifts: %v", err)
+		log.Printf("[seed] assignments: %v", err)
 		return
 	}
-	monday := weekMondayOf(time.Now())
-	assigned := 0
-	for uid, ds := range depts {
-		shifts, err := db.Query(ctx, `
-			SELECT id, start_time, end_time FROM workqueue
-			WHERE status = 'open' AND department_id = ANY($1) AND date >= $2 AND date < $3
-			ORDER BY date, start_time`, ds, monday, monday.AddDate(0, 0, 14))
+	for _, uid := range order {
+		wt, hl, err := workerSettings(ctx, uid)
 		if err != nil {
-			log.Printf("[seed] shifts: %v", err)
+			log.Printf("[seed] assignments: %v", err)
 			return
 		}
-		type openShift struct {
-			id         int
-			start, end string
-		}
-		var open []openShift
-		for shifts.Next() {
-			var s openShift
-			if err := shifts.Scan(&s.id, &s.start, &s.end); err != nil {
-				shifts.Close()
-				log.Printf("[seed] shifts: %v", err)
-				return
-			}
-			open = append(open, s)
-		}
-		if err := shifts.Err(); err != nil {
-			shifts.Close()
-			log.Printf("[seed] shifts: %v", err)
+		workers[uid].cap = workerPolicyFor(wt, hl).cap
+	}
+
+	// Open shifts in the next two weeks.
+	monday := weekMondayOf(time.Now())
+	srows, err := db.Query(ctx, `
+		SELECT id, department_id, date, start_time, end_time FROM workqueue
+		WHERE status = 'open' AND date >= $1 AND date < $2
+		ORDER BY date, start_time`, monday, monday.AddDate(0, 0, 14))
+	if err != nil {
+		log.Printf("[seed] assignments: %v", err)
+		return
+	}
+	var shifts []assignShift
+	for srows.Next() {
+		var s assignShift
+		var date time.Time
+		var start, end string
+		if err := srows.Scan(&s.id, &s.dept, &date, &start, &end); err != nil {
+			srows.Close()
+			log.Printf("[seed] assignments: %v", err)
 			return
 		}
-		shifts.Close()
-		rand.Shuffle(len(open), func(i, j int) { open[i], open[j] = open[j], open[i] })
-		total := 0.0
-		for _, s := range open {
-			hours := hoursBetween(s.start, s.end)
-			if total+hours > 20 {
-				continue
-			}
-			if _, err := db.Exec(ctx,
-				`UPDATE workqueue SET status = 'assigned', assigned_user_id = $1 WHERE id = $2 AND status = 'open'`,
-				uid, s.id); err != nil {
-				log.Printf("[seed] shifts: %v", err)
-				return
-			}
-			total += hours
-			assigned++
-			if total >= 12 {
-				break
-			}
+		if date.After(monday.AddDate(0, 0, 6)) {
+			s.week = 1
 		}
+		s.hours = hoursBetween(start, end)
+		shifts = append(shifts, s)
+	}
+	srows.Close()
+	if err := srows.Err(); err != nil {
+		log.Printf("[seed] assignments: %v", err)
+		return
+	}
+
+	var workerList []assignWorker
+	for _, uid := range order {
+		workerList = append(workerList, *workers[uid])
+	}
+	plan := planAssignments(shifts, workerList, 0.8)
+
+	assigned := 0
+	for shiftID, userID := range plan {
+		if _, err := db.Exec(ctx,
+			`UPDATE workqueue SET status = 'assigned', assigned_user_id = $1 WHERE id = $2 AND status = 'open'`,
+			userID, shiftID); err != nil {
+			log.Printf("[seed] assignments: %v", err)
+			return
+		}
+		assigned++
 	}
 	if assigned > 0 {
-		log.Printf("[seed] assigned %d workqueue shifts to students", assigned)
+		var total, filled float64
+		for _, s := range shifts {
+			total += s.hours
+			if _, ok := plan[s.id]; ok {
+				filled += s.hours
+			}
+		}
+		log.Printf("[seed] assigned %d workqueue shifts (%.0f%% of %.0fh)", assigned, 100*filled/total, total)
 	}
 }
 
-// Dev-only: gives the seeded staff account a job and assigns open shifts until
-// they're near their weekly cap, so the staff screen has a fuller calendar.
+// Dev-only: ensures the seeded staff account has a job so they see the
+// workqueue. Shift assignment is handled by seedAssignments.
 func seedStaff(ctx context.Context) {
 	if cfg.Env != "development" {
 		return
 	}
 	var staffID int
-	err := db.QueryRow(ctx, `SELECT id FROM users WHERE email = 'staff@mail.com'`).Scan(&staffID)
+	err := db.QueryRow(ctx, `SELECT id FROM users WHERE email = 'staff@mail.edu'`).Scan(&staffID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return
 	}
@@ -421,63 +519,6 @@ func seedStaff(ctx context.Context) {
 			log.Printf("[seed] staff job assignment: %v", err)
 			return
 		}
-		_ = db.QueryRow(ctx, `SELECT department_id FROM jobs WHERE id = $1`, jobID).Scan(&deptID)
-	} else if err != nil {
-		log.Printf("[seed] staff: %v", err)
-		return
-	}
-
-	// Assign open shifts until the staff is near their weekly cap.
-	if deptID != 0 {
-		used, err := workerWeekHours(ctx, staffID, time.Now())
-		if err != nil {
-			log.Printf("[seed] staff hours: %v", err)
-			return
-		}
-		rows, err := db.Query(ctx, `
-			SELECT id, start_time, end_time FROM workqueue
-			WHERE status = 'open' AND department_id = $1
-			ORDER BY date, start_time`, deptID)
-		if err != nil {
-			log.Printf("[seed] staff shifts: %v", err)
-			return
-		}
-		type openShift struct {
-			id         int
-			start, end string
-		}
-		var open []openShift
-		for rows.Next() {
-			var s openShift
-			if err := rows.Scan(&s.id, &s.start, &s.end); err != nil {
-				rows.Close()
-				log.Printf("[seed] staff shifts: %v", err)
-				return
-			}
-			open = append(open, s)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			log.Printf("[seed] staff shifts: %v", err)
-			return
-		}
-		rand.Shuffle(len(open), func(i, j int) { open[i], open[j] = open[j], open[i] })
-		for _, s := range open {
-			hours := hoursBetween(s.start, s.end)
-			if used+hours > 20 {
-				continue
-			}
-			if _, err := db.Exec(ctx,
-				`UPDATE workqueue SET status = 'assigned', assigned_user_id = $1 WHERE id = $2 AND status = 'open'`,
-				staffID, s.id); err != nil {
-				log.Printf("[seed] staff shifts: %v", err)
-				return
-			}
-			used += hours
-			if used >= 18 {
-				break
-			}
-		}
 	}
 }
 
@@ -493,10 +534,10 @@ func seedStaffConversions(ctx context.Context) {
 		workerType  string
 		hourlyLimit *int
 	}{
-		{"student1@mail.com", "fulltime", nil},
-		{"student2@mail.com", "hourly", limit(20)},
-		{"student3@mail.com", "fulltime", nil},
-		{"student4@mail.com", "hourly", limit(15)},
+		{"fulltime1@mail.edu", "fulltime", nil},
+		{"hourly2@mail.edu", "hourly", limit(20)},
+		{"fulltime3@mail.edu", "fulltime", nil},
+		{"hourly4@mail.edu", "hourly", limit(15)},
 	}
 	for _, c := range conversions {
 		if _, err := db.Exec(ctx, `

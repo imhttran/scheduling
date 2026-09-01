@@ -62,7 +62,7 @@ func loadConfig() {
 		SMTPPort:    intOr(os.Getenv("SMTP_PORT"), 587),
 		SMTPUser:    os.Getenv("SMTP_USER"),
 		SMTPPass:    os.Getenv("SMTP_PASS"),
-		MailFrom:    envOr("MAIL_FROM", "no-reply@example.com"),
+		MailFrom:    envOr("MAIL_FROM", "no-reply@example.edu"),
 		MaxAttempts: intOr(os.Getenv("MAX_ATTEMPTS"), 3),
 		// Bypass email verification when EMAIL_VERIFICATION_REQUIRED=false (dev / local setups).
 		EmailVerificationRequired: os.Getenv("EMAIL_VERIFICATION_REQUIRED") != "false",

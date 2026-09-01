@@ -38,7 +38,7 @@ Backend runs on **:8080**, frontend on **:3000**. Logs:
 `/tmp/go-template-backend.log`, `/tmp/go-template-frontend.log`.
 
 Open **http://localhost:3000** and log in with the dev admin:
-**admin@mail.com** / **Password1234!**.
+**admin@mail.edu** / **Password1234!**.
 
 Users can log in with either their **email** or their **UID** (university ID).
 After `LOGIN_MAX_ATTEMPTS` (default 5) failed logins, that account is locked
@@ -66,8 +66,8 @@ locations, departments, and assign managers to locations. To try the other
 roles, create users (admin → Add User) and promote them via the CLI:
 
 ```bash
-cd backend && go run ./cmd/set-role student@mail.com student
-cd backend && go run ./cmd/set-role manager@mail.com manager
+cd backend && go run ./cmd/set-role student@mail.edu student
+cd backend && go run ./cmd/set-role manager@mail.edu manager
 ```
 
 Then log in as each to see `/student` and `/manager`.
@@ -98,7 +98,7 @@ tests need `TEST_DATABASE_URL` (see docs/DATABASE.md).
 self-service promotion):
 
 ```bash
-cd backend && go run ./cmd/set-role you@email.com admin
+cd backend && go run ./cmd/set-role you@email.edu admin
 # or: ./manage.sh → [8]
 ```
 

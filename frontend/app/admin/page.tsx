@@ -93,6 +93,7 @@ export default function AdminPage() {
   const [sortBy, setSortBy] = useState<"email" | "role" | "disabled">("email");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
   const [locationModal, setLocationModal] = useState<LocationModal>(null);
   const [departmentModal, setDepartmentModal] = useState<DepartmentModal>(null);
   const [jobModal, setJobModal] = useState<JobModal>(null);
@@ -101,7 +102,16 @@ export default function AdminPage() {
 
   const USERS_PER_PAGE = 10;
 
-  const sortedUsers = [...users].sort((a, b) => {
+  const q = search.trim().toLowerCase();
+  const filteredUsers = q
+    ? users.filter(
+        (u) =>
+          (u.email ?? "").toLowerCase().includes(q) ||
+          (u.uid ?? "").toLowerCase().includes(q) ||
+          (u.role ?? "").toLowerCase().includes(q),
+      )
+    : users;
+  const sortedUsers = [...filteredUsers].sort((a, b) => {
     const av = String(a[sortBy]);
     const bv = String(b[sortBy]);
     const cmp = av.localeCompare(bv, undefined, { numeric: true });
@@ -546,6 +556,16 @@ export default function AdminPage() {
           <div className="user-list-section" id="access-control">
             <div className="section-title-row">
               <h2>Access Control</h2>
+              <input
+                type="search"
+                className="search-input"
+                placeholder="Search email, UID, or role"
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+              />
               <button
                 type="button"
                 className="login-button add-button"

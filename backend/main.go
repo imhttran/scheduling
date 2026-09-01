@@ -48,9 +48,9 @@ func main() {
 	seedFromCSV(ctx)
 	seedWorkqueue(ctx)
 	seedStudentAvailability(ctx)
-	seedStudentShifts(ctx)
 	seedStaff(ctx)
 	seedStaffConversions(ctx)
+	seedAssignments(ctx)
 	seedRequests(ctx)
 	seedJobHolidays(ctx)
 	seedWeeklySchedules(ctx)
@@ -130,7 +130,7 @@ func seedDevAdmin(ctx context.Context) {
 	if cfg.Env != "development" {
 		return
 	}
-	const devAdminEmail = "admin@mail.com"
+	const devAdminEmail = "admin@mail.edu"
 	const devAdminPassword = "Password1234!"
 	var id int
 	err := db.QueryRow(ctx, `
