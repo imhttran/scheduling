@@ -36,6 +36,13 @@ type Config struct {
 
 	MaxAttempts int
 
+	// Bundled AI assistant (Admin/Manager screens). System prompt, provider
+	// endpoint, model, and API key are all pre-configured via the environment.
+	AIPrompt  string
+	AIBaseURL string
+	AIAPIKey  string
+	AIModel   string
+
 	// Login rate limiting: max failed attempts before a temporary lockout.
 	LoginMaxAttempts int
 	// Lockout window in minutes after exceeding the attempt limit.
@@ -64,6 +71,13 @@ func loadConfig() {
 		SMTPPass:    os.Getenv("SMTP_PASS"),
 		MailFrom:    envOr("MAIL_FROM", "no-reply@example.edu"),
 		MaxAttempts: intOr(os.Getenv("MAX_ATTEMPTS"), 3),
+		// Pre-configured AI assistant prompt. Loaded from an env var so it can be
+		// tuned per deployment without touching code. Empty disables/relaxes the
+		// prompt only; the panel still needs an API key to function.
+		AIPrompt:  os.Getenv("AI_PROMPT"),
+		AIBaseURL: os.Getenv("AI_BASE_URL"),
+		AIAPIKey:  os.Getenv("AI_API_KEY"),
+		AIModel:   envOr("AI_MODEL", "gpt-4o-mini"),
 		// Bypass email verification when EMAIL_VERIFICATION_REQUIRED=false (dev / local setups).
 		EmailVerificationRequired: os.Getenv("EMAIL_VERIFICATION_REQUIRED") != "false",
 		// Failed logins before a temporary lockout (default 5).
@@ -224,6 +238,10 @@ func newRouter() http.Handler {
 			r.With(parseID).Post("/me/requests/{id}/cancel", cancelRequest)
 			r.Get("/me/preferences", myPreferences)
 			r.Post("/me/preferences", addPreference)
+
+			// Bundled AI assistant — exact manager/admin match, so scheduler
+			// (which ranks above manager) does not get it.
+			r.With(requireRoleIn("manager", "admin")).Post("/ai/chat", aiChat)
 		})
 	})
 	return r

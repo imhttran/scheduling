@@ -163,6 +163,22 @@ Admins can also **Reset Password** on any Access Control row: it generates a
 15-character temporary password, emails it to the user, and forces a change on
 next login (the user enters the emailed password as their current password).
 
+### AI assistant (Admin/Manager)
+
+The Admin and Manager screens include a Zed-style AI assistant panel. Its system
+prompt and provider are pre-configured via environment variables (keep the key
+server-side — the browser only ever talks to the backend proxy):
+
+- `AI_PROMPT` — the pre-configured system prompt given to the agent.
+- `AI_BASE_URL` — base URL of any OpenAI-compatible provider (e.g.
+  `https://api.openai.com/v1`, or a self-hosted Ollama/LM Studio endpoint).
+- `AI_API_KEY` — provider API key (server only).
+- `AI_MODEL` — model name, defaults to `gpt-4o-mini`.
+
+If `AI_API_KEY`/`AI_BASE_URL`/`AI_MODEL` are unset, the panel shows the
+"not configured" message instead of failing. Only the `admin` and `manager`
+roles see it.
+
 ## API
 
 17 endpoints under `/api/*` — see `backend/app.go` (`routes()`).

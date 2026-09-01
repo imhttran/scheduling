@@ -7,6 +7,7 @@ import { PageFooter } from "@/components/PageFooter";
 import { PageTitle } from "@/components/PageTitle";
 import { Modal } from "@/components/Modal";
 import { JobModal, type JobInput } from "@/components/JobModal";
+import { AIAssistantPanel } from "@/components/AIAssistantPanel";
 import { hasRole } from "@/lib/roles";
 import { useSortablePage } from "@/lib/pagination";
 import { DataGrid, type Column } from "@/components/DataGrid";
@@ -870,6 +871,10 @@ export default function ManagerPage() {
       )}
 
       <PageFooter meta={<span>Manager</span>} />
+
+      {(role === "manager" || role === "admin") && (
+        <AIAssistantPanel token={token ?? ""} />
+      )}
     </div>
   );
 }

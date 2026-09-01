@@ -12,6 +12,7 @@ import { ROLES } from "@/lib/roles";
 import { PageHeader } from "@/components/PageHeader";
 import { PageFooter } from "@/components/PageFooter";
 import { PageTitle } from "@/components/PageTitle";
+import { AIAssistantPanel } from "@/components/AIAssistantPanel";
 import { Modal } from "@/components/Modal";
 import { JobModal, type JobInput } from "@/components/JobModal";
 import { useSortablePage } from "@/lib/pagination";
@@ -890,6 +891,8 @@ export default function AdminPage() {
       )}
 
       <PageFooter meta={<span>Admin</span>} />
+
+      <AIAssistantPanel token={token ?? ""} />
     </div>
   );
 }
