@@ -455,6 +455,35 @@ func deptInCallerLocation(w http.ResponseWriter, r *http.Request, deptID int) bo
 	return true
 }
 
+// Default operating hours for a new job: weekdays 8h each (40h/wk) and
+// weekends 10h each (20h/wk). Used when a job is created without explicit
+// schedules.
+func defaultJobSchedules() []jobScheduleInput {
+	return []jobScheduleInput{
+		{DayOfWeek: 1, StartTime: "08:00", EndTime: "16:00"}, // Mon
+		{DayOfWeek: 2, StartTime: "08:00", EndTime: "16:00"}, // Tue
+		{DayOfWeek: 3, StartTime: "08:00", EndTime: "16:00"}, // Wed
+		{DayOfWeek: 4, StartTime: "08:00", EndTime: "16:00"}, // Thu
+		{DayOfWeek: 5, StartTime: "08:00", EndTime: "16:00"}, // Fri
+		{DayOfWeek: 6, StartTime: "10:00", EndTime: "20:00"}, // Sat
+		{DayOfWeek: 0, StartTime: "10:00", EndTime: "20:00"}, // Sun
+	}
+}
+
+// Inserts the default operating hours for a job (used by the seeder).
+// Idempotent — existing rows are left untouched.
+func insertDefaultJobSchedules(ctx context.Context, jobID int) error {
+	for _, s := range defaultJobSchedules() {
+		if _, err := db.Exec(ctx, `
+			INSERT INTO job_schedules (job_id, day_of_week, start_time, end_time)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT (job_id, day_of_week) DO NOTHING`, jobID, s.DayOfWeek, s.StartTime, s.EndTime); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func createJob(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name           string             `json:"name"`
@@ -495,7 +524,11 @@ func createJob(w http.ResponseWriter, r *http.Request) {
 		respond500(w, "Create Job Error", err, true)
 		return
 	}
-	if err := replaceJobSchedules(r.Context(), id, body.Schedules); err != nil {
+	schedules := body.Schedules
+	if len(schedules) == 0 {
+		schedules = defaultJobSchedules()
+	}
+	if err := replaceJobSchedules(r.Context(), id, schedules); err != nil {
 		respond500(w, "Create Job Error", err, true)
 		return
 	}

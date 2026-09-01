@@ -24,6 +24,21 @@ export type JobInput = {
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+// Default operating hours for a new job: weekdays 8h (40h/wk), weekends 10h
+// (20h/wk). Mirrors defaultJobSchedules() in the backend.
+const DEFAULT_SCHEDULES: Record<
+  number,
+  { startTime: string; endTime: string }
+> = {
+  1: { startTime: "08:00", endTime: "16:00" },
+  2: { startTime: "08:00", endTime: "16:00" },
+  3: { startTime: "08:00", endTime: "16:00" },
+  4: { startTime: "08:00", endTime: "16:00" },
+  5: { startTime: "08:00", endTime: "16:00" },
+  6: { startTime: "10:00", endTime: "20:00" },
+  0: { startTime: "10:00", endTime: "20:00" },
+};
+
 // Create/edit form for a job: basic info, optimal staff, per-day operating
 // hours, and one-off holiday closures. Stateful so the dynamic schedule and
 // holiday lists can be added/removed before submitting.
@@ -46,10 +61,13 @@ export function JobModal({
     job?.optimalWorkers ?? 1,
   );
   const [schedules, setSchedules] = useState<(JobScheduleInput | null)[]>(() =>
-    DAYS.map(
-      (_, dow) =>
-        job?.schedules.find((s) => s.dayOfWeek === dow) ?? null,
-    ),
+    DAYS.map((_, dow) => {
+      const existing = job?.schedules.find((s) => s.dayOfWeek === dow);
+      if (existing) return existing;
+      if (job) return null; // editing: leave blank days closed
+      const def = DEFAULT_SCHEDULES[dow];
+      return def ? { dayOfWeek: dow, ...def, hours: 0 } : null;
+    }),
   );
   const [holidays, setHolidays] = useState<JobHolidayInput[]>(
     job?.holidays ?? [],
@@ -57,10 +75,7 @@ export function JobModal({
   const [holidayDate, setHolidayDate] = useState("");
   const [holidayReason, setHolidayReason] = useState("");
 
-  const updateSchedule = (
-    dow: number,
-    changes: Partial<JobScheduleInput>,
-  ) => {
+  const updateSchedule = (dow: number, changes: Partial<JobScheduleInput>) => {
     setSchedules((prev) => {
       const copy = [...prev];
       const cur = copy[dow] ?? {

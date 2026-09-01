@@ -140,6 +140,9 @@ func seedFromCSV(ctx context.Context) {
 					log.Printf("[seed] %s job: %v", email, err)
 					continue
 				}
+				if err := insertDefaultJobSchedules(ctx, jobID); err != nil {
+					log.Printf("[seed] %s job schedules: %v", email, err)
+				}
 				if _, err := db.Exec(ctx, `
 					INSERT INTO student_jobs (user_id, job_id, min_hours, max_hours)
 					VALUES ($1, $2, $3, $4)`, userID, jobID, minHours, maxHours); err != nil {

@@ -25,6 +25,9 @@ var jobHolidaysSQL string
 //go:embed migrations/005_worker_hours.sql
 var workerHoursSQL string
 
+//go:embed migrations/006_job_default_schedules.sql
+var jobDefaultSchedulesSQL string
+
 func main() {
 	loadEnvFiles()
 	loadConfig()
@@ -67,6 +70,7 @@ func migrate(ctx context.Context) {
 		{3, jobRequirementsSQL},
 		{4, jobHolidaysSQL},
 		{5, workerHoursSQL},
+		{6, jobDefaultSchedulesSQL},
 	} {
 		var applied bool
 		if err := db.QueryRow(ctx,
