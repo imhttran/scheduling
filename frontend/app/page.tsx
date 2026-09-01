@@ -174,6 +174,7 @@ export default function LoginPage() {
                   pattern="[0-9]"
                   maxLength={1}
                   autoComplete="one-time-code"
+                  autoFocus={i === 0}
                   value={d}
                   disabled={busy}
                   onChange={(e) => handleDigitChange(i, e.target.value)}

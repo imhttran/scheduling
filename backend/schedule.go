@@ -1479,6 +1479,38 @@ func pickShift(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, map[string]any{"success": true, "assigned": true, "message": "Shift assigned"})
 }
 
+// A student's own schedule requests, newest first.
+func myRequests(w http.ResponseWriter, r *http.Request) {
+	u := currentUser(r)
+	rows, err := db.Query(r.Context(), `
+		SELECT r.id, r.workqueue_id, w.date, w.start_time, w.end_time, r.type, r.status, r.reason
+		FROM schedule_requests r
+		JOIN workqueue w ON w.id = r.workqueue_id
+		WHERE r.user_id = $1
+		ORDER BY r.created_at DESC`, u.ID)
+	if err != nil {
+		respond500(w, "My Requests Error", err, false)
+		return
+	}
+	defer rows.Close()
+	requests := []map[string]any{}
+	for rows.Next() {
+		var id, wqID int
+		var date time.Time
+		var start, end, typ, status string
+		var reason *string
+		if err := rows.Scan(&id, &wqID, &date, &start, &end, &typ, &status, &reason); err != nil {
+			respond500(w, "My Requests Error", err, false)
+			return
+		}
+		requests = append(requests, map[string]any{
+			"id": id, "workqueueId": wqID, "date": date.Format("2006-01-02"),
+			"startTime": start, "endTime": end, "type": typ, "status": status, "reason": reason,
+		})
+	}
+	respond(w, http.StatusOK, map[string]any{"requests": requests})
+}
+
 func createRequest(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	var body struct {
@@ -1509,6 +1541,30 @@ func createRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Request submitted"})
+}
+
+// A student's preferred days/times.
+func myPreferences(w http.ResponseWriter, r *http.Request) {
+	u := currentUser(r)
+	rows, err := db.Query(r.Context(), `
+		SELECT day_of_week, start_time, end_time FROM preferred_times
+		WHERE user_id = $1 ORDER BY day_of_week, start_time`, u.ID)
+	if err != nil {
+		respond500(w, "My Preferences Error", err, false)
+		return
+	}
+	defer rows.Close()
+	prefs := []map[string]any{}
+	for rows.Next() {
+		var dow int
+		var start, end string
+		if err := rows.Scan(&dow, &start, &end); err != nil {
+			respond500(w, "My Preferences Error", err, false)
+			return
+		}
+		prefs = append(prefs, map[string]any{"dayOfWeek": dow, "startTime": start, "endTime": end})
+	}
+	respond(w, http.StatusOK, map[string]any{"preferences": prefs})
 }
 
 func addPreference(w http.ResponseWriter, r *http.Request) {
