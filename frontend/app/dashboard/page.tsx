@@ -15,8 +15,7 @@ import { ROLES, hasRole } from "@/lib/roles";
 import { PageHeader } from "@/components/PageHeader";
 import { PageFooter } from "@/components/PageFooter";
 import { PageTitle } from "@/components/PageTitle";
-
-const USERS_PER_PAGE = 10;
+import { Pager, SortableTh, useSortablePage } from "@/lib/pagination";
 
 const yesNo = (value: boolean) => (value ? "Yes" : "No");
 
@@ -37,7 +36,6 @@ type UserRow = {
 };
 
 type SortKey = "email" | "role" | "emailVerified";
-type SortDir = "asc" | "desc";
 
 const SORTABLE_COLUMNS: { key: SortKey; label: string }[] = [
   { key: "email", label: "Email" },
@@ -138,9 +136,6 @@ export default function DashboardPage() {
   const [usersFailed, setUsersFailed] = useState(false);
   // Sort column/direction + current page survive across fetches so a
   // mutation's refresh doesn't reset the admin's place in the list.
-  const [sortBy, setSortBy] = useState<SortKey>("email");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
-  const [page, setPage] = useState(1);
   const addUserDetailsRef = useRef<HTMLDetailsElement>(null);
 
   const isAdmin = me ? hasRole(me.role, "admin") : false;
@@ -231,38 +226,11 @@ export default function DashboardPage() {
 
   // Sorting and paging just re-run against the in-memory list; only a real
   // mutation re-fetches (via loadUsers), preserving the current view.
-  const sorted = users
-    ? [...users].sort((a, b) => {
-        const cmp = String(a[sortBy]).localeCompare(
-          String(b[sortBy]),
-          undefined,
-          { numeric: true },
-        );
-        return sortDir === "asc" ? cmp : -cmp;
-      })
-    : null;
-
-  const pageCount = Math.max(
-    1,
-    Math.ceil((sorted?.length ?? 0) / USERS_PER_PAGE),
+  const usersGrid = useSortablePage<UserRow>(
+    users ?? [],
+    (u, key) => u[key as keyof UserRow],
+    "email",
   );
-  const currentPage = Math.min(page, pageCount);
-  const pageUsers = sorted
-    ? sorted.slice(
-        (currentPage - 1) * USERS_PER_PAGE,
-        currentPage * USERS_PER_PAGE,
-      )
-    : [];
-
-  const toggleSort = (key: SortKey) => {
-    if (sortBy === key) {
-      setSortDir(sortDir === "asc" ? "desc" : "asc");
-    } else {
-      setSortBy(key);
-      setSortDir("asc");
-    }
-    setPage(1);
-  };
 
   const withToken = useCallback(
     (run: (authToken: string) => Promise<void>) => {
@@ -285,9 +253,7 @@ export default function DashboardPage() {
       if (result) {
         form.reset();
         if (addUserDetailsRef.current) addUserDetailsRef.current.open = false;
-        setSortBy("email");
-        setSortDir("asc");
-        setPage(1);
+        usersGrid.reset();
         await loadUsers(token);
       }
     })();
@@ -352,18 +318,14 @@ export default function DashboardPage() {
                 <thead>
                   <tr>
                     {SORTABLE_COLUMNS.map((column) => (
-                      <th
+                      <SortableTh
                         key={column.key}
-                        className="sortable"
-                        onClick={() => toggleSort(column.key)}
-                      >
-                        {column.label}
-                        {sortBy === column.key
-                          ? sortDir === "asc"
-                            ? " ▲"
-                            : " ▼"
-                          : ""}
-                      </th>
+                        label={column.label}
+                        sortKey={column.key}
+                        sortBy={usersGrid.sortBy}
+                        sortDir={usersGrid.sortDir}
+                        onSort={() => usersGrid.toggleSort(column.key)}
+                      />
                     ))}
                     <th style={isAdmin ? undefined : { display: "none" }}>
                       Actions
@@ -376,7 +338,7 @@ export default function DashboardPage() {
                       <td colSpan={4}>Failed to load users.</td>
                     </tr>
                   ) : (
-                    pageUsers.map((user) => {
+                    usersGrid.pageItems.map((user) => {
                       const actions: TableAction[] = [];
                       if (!user.emailVerified) {
                         actions.push({
@@ -480,27 +442,12 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
-            {pageCount > 1 && (
-              <div className="user-pager">
-                <button
-                  type="button"
-                  disabled={currentPage <= 1}
-                  onClick={() => setPage(currentPage - 1)}
-                >
-                  Prev
-                </button>
-                <span>
-                  Page {currentPage} of {pageCount}
-                </span>
-                <button
-                  type="button"
-                  disabled={currentPage >= pageCount}
-                  onClick={() => setPage(currentPage + 1)}
-                >
-                  Next
-                </button>
-              </div>
-            )}
+            <Pager
+              pageCount={usersGrid.pageCount}
+              currentPage={usersGrid.currentPage}
+              onPrev={() => usersGrid.setPage(usersGrid.currentPage - 1)}
+              onNext={() => usersGrid.setPage(usersGrid.currentPage + 1)}
+            />
           </div>
         )}
       </div>

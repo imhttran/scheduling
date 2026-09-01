@@ -8,6 +8,7 @@ import { PageTitle } from "@/components/PageTitle";
 import { Modal } from "@/components/Modal";
 import { JobModal, type JobInput } from "@/components/JobModal";
 import { hasRole } from "@/lib/roles";
+import { Pager, SortableTh, usePager, useSortablePage } from "@/lib/pagination";
 
 type StudentJob = {
   jobId: number;
@@ -107,9 +108,6 @@ export default function ManagerPage() {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
-  const [sortBy, setSortBy] = useState<"email">("email");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [page, setPage] = useState(1);
   const [studentModal, setStudentModal] = useState<Student | null>(null);
   const [jobModal, setJobModal] = useState<Job | null>(null);
   const [workqueueModal, setWorkqueueModal] = useState(false);
@@ -122,33 +120,14 @@ export default function ManagerPage() {
   // Managers and admins create/edit jobs; schedulers only view them.
   const canManageJobs = role === "manager" || role === "admin";
 
-  const STUDENTS_PER_PAGE = 10;
-
-  const sortedStudents = [...students].sort((a, b) => {
-    const av = String(a[sortBy] ?? "");
-    const bv = String(b[sortBy] ?? "");
-    const cmp = av.localeCompare(bv, undefined, { numeric: true });
-    return sortDir === "asc" ? cmp : -cmp;
-  });
-  const pageCount = Math.max(
-    1,
-    Math.ceil(sortedStudents.length / STUDENTS_PER_PAGE),
+  const studentsGrid = useSortablePage<Student>(
+    students,
+    (s) => s.email,
+    "email",
   );
-  const currentPage = Math.min(page, pageCount);
-  const pageStudents = sortedStudents.slice(
-    (currentPage - 1) * STUDENTS_PER_PAGE,
-    currentPage * STUDENTS_PER_PAGE,
-  );
-
-  const toggleSort = (key: "email") => {
-    if (sortBy === key) {
-      setSortDir(sortDir === "asc" ? "desc" : "asc");
-    } else {
-      setSortBy(key);
-      setSortDir("asc");
-    }
-    setPage(1);
-  };
+  const jobsPager = usePager<Job>(jobs);
+  const shiftsPager = usePager<Shift>(shifts);
+  const requestsPager = usePager<Request>(requests);
 
   const load = useCallback(async (authToken: string) => {
     const [s, j, sh, d, r] = await Promise.all([
@@ -422,17 +401,13 @@ export default function ManagerPage() {
               <table className="user-table">
                 <thead>
                   <tr>
-                    <th
-                      className="sortable"
-                      onClick={() => toggleSort("email")}
-                    >
-                      Email
-                      {sortBy === "email"
-                        ? sortDir === "asc"
-                          ? " ▲"
-                          : " ▼"
-                        : ""}
-                    </th>
+                    <SortableTh
+                      label="Email"
+                      sortKey="email"
+                      sortBy={studentsGrid.sortBy}
+                      sortDir={studentsGrid.sortDir}
+                      onSort={() => studentsGrid.toggleSort("email")}
+                    />
                     <th>Type</th>
                     <th>Hours</th>
                     <th>Jobs</th>
@@ -445,7 +420,7 @@ export default function ManagerPage() {
                       <td colSpan={5}>No workers in your location.</td>
                     </tr>
                   ) : (
-                    pageStudents.map((s) => (
+                    studentsGrid.pageItems.map((s) => (
                       <tr key={s.id}>
                         <td>{s.email}</td>
                         <td>{s.workerTypeLabel}</td>
@@ -475,27 +450,12 @@ export default function ManagerPage() {
                 </tbody>
               </table>
             </div>
-            {pageCount > 1 && (
-              <div className="user-pager">
-                <button
-                  type="button"
-                  disabled={currentPage <= 1}
-                  onClick={() => setPage(currentPage - 1)}
-                >
-                  Prev
-                </button>
-                <span>
-                  Page {currentPage} of {pageCount}
-                </span>
-                <button
-                  type="button"
-                  disabled={currentPage >= pageCount}
-                  onClick={() => setPage(currentPage + 1)}
-                >
-                  Next
-                </button>
-              </div>
-            )}
+            <Pager
+              pageCount={studentsGrid.pageCount}
+              currentPage={studentsGrid.currentPage}
+              onPrev={() => studentsGrid.setPage(studentsGrid.currentPage - 1)}
+              onNext={() => studentsGrid.setPage(studentsGrid.currentPage + 1)}
+            />
           </div>
 
           <div className="user-list-section" id="jobs">
@@ -550,7 +510,7 @@ export default function ManagerPage() {
                       <td colSpan={11}>No jobs in your location.</td>
                     </tr>
                   ) : (
-                    jobs.map((j) => (
+                    jobsPager.pageItems.map((j) => (
                       <tr key={j.id}>
                         <td>{j.name}</td>
                         <td>{j.departmentName}</td>
@@ -584,6 +544,12 @@ export default function ManagerPage() {
                 </tbody>
               </table>
             </div>
+            <Pager
+              pageCount={jobsPager.pageCount}
+              currentPage={jobsPager.currentPage}
+              onPrev={() => jobsPager.setPage(jobsPager.currentPage - 1)}
+              onNext={() => jobsPager.setPage(jobsPager.currentPage + 1)}
+            />
           </div>
 
           <div className="user-list-section" id="workqueue">
@@ -623,7 +589,7 @@ export default function ManagerPage() {
                       <td colSpan={canAssign ? 6 : 5}>No shifts yet.</td>
                     </tr>
                   ) : (
-                    shifts.map((sh) => (
+                    shiftsPager.pageItems.map((sh) => (
                       <tr key={sh.id}>
                         <td>{sh.departmentName}</td>
                         <td>{sh.date}</td>
@@ -673,6 +639,12 @@ export default function ManagerPage() {
                 </tbody>
               </table>
             </div>
+            <Pager
+              pageCount={shiftsPager.pageCount}
+              currentPage={shiftsPager.currentPage}
+              onPrev={() => shiftsPager.setPage(shiftsPager.currentPage - 1)}
+              onNext={() => shiftsPager.setPage(shiftsPager.currentPage + 1)}
+            />
           </div>
 
           <div className="user-list-section" id="requests">
@@ -695,7 +667,7 @@ export default function ManagerPage() {
                       <td colSpan={6}>No pending requests.</td>
                     </tr>
                   ) : (
-                    requests.map((r) => (
+                    requestsPager.pageItems.map((r) => (
                       <tr key={r.id}>
                         <td>{r.email}</td>
                         <td>{r.date}</td>
@@ -724,6 +696,16 @@ export default function ManagerPage() {
                 </tbody>
               </table>
             </div>
+            <Pager
+              pageCount={requestsPager.pageCount}
+              currentPage={requestsPager.currentPage}
+              onPrev={() =>
+                requestsPager.setPage(requestsPager.currentPage - 1)
+              }
+              onNext={() =>
+                requestsPager.setPage(requestsPager.currentPage + 1)
+              }
+            />
           </div>
         </div>
       </div>

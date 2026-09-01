@@ -432,6 +432,11 @@ body {
    (4 columns + action buttons) is wider than the viewport, e.g. on mobile. */
 .table-scroll {
     overflow-x: auto;
+    overflow-y: auto;
+    /* Cap the grid to the available vertical space (matches the 0.55
+       height fraction used by usePager), so the grid stretches with the
+       viewport and paginates only when it overflows. */
+    max-height: 55vh;
 }
 
 /* ---- Week calendar view (student/calendar) ---- */

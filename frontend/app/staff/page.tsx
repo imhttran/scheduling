@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { PageFooter } from "@/components/PageFooter";
 import { PageTitle } from "@/components/PageTitle";
 import { MissRequestModal } from "@/components/MissRequestModal";
+import { Pager, usePager } from "@/lib/pagination";
 
 type Shift = {
   id: number;
@@ -115,6 +116,10 @@ export default function StaffPage() {
     0,
   );
 
+  const calendarPager = usePager<Shift>(calendar);
+  const workqueuePager = usePager<Shift>(workqueue);
+  const requestsPager = usePager<Request>(requests);
+
   return (
     <div className="dashboard-container wide">
       <PageTitle title="My Work Schedule" />
@@ -156,7 +161,7 @@ export default function StaffPage() {
                     <td colSpan={5}>No shifts scheduled this week.</td>
                   </tr>
                 ) : (
-                  calendar.map((s) => (
+                  calendarPager.pageItems.map((s) => (
                     <tr key={s.id}>
                       <td>{s.date}</td>
                       <td>{s.startTime}</td>
@@ -173,6 +178,12 @@ export default function StaffPage() {
               </tbody>
             </table>
           </div>
+          <Pager
+            pageCount={calendarPager.pageCount}
+            currentPage={calendarPager.currentPage}
+            onPrev={() => calendarPager.setPage(calendarPager.currentPage - 1)}
+            onNext={() => calendarPager.setPage(calendarPager.currentPage + 1)}
+          />
         </div>
 
         <div className="user-list-section">
@@ -194,7 +205,7 @@ export default function StaffPage() {
                     <td colSpan={5}>No open shifts in your department.</td>
                   </tr>
                 ) : (
-                  workqueue.map((s) => (
+                  workqueuePager.pageItems.map((s) => (
                     <tr key={s.id}>
                       <td>{s.date}</td>
                       <td>{s.startTime}</td>
@@ -214,6 +225,16 @@ export default function StaffPage() {
               </tbody>
             </table>
           </div>
+          <Pager
+            pageCount={workqueuePager.pageCount}
+            currentPage={workqueuePager.currentPage}
+            onPrev={() =>
+              workqueuePager.setPage(workqueuePager.currentPage - 1)
+            }
+            onNext={() =>
+              workqueuePager.setPage(workqueuePager.currentPage + 1)
+            }
+          />
         </div>
 
         <div className="user-list-section">
@@ -237,7 +258,7 @@ export default function StaffPage() {
                     <td colSpan={7}>No requests yet.</td>
                   </tr>
                 ) : (
-                  requests.map((r) => (
+                  requestsPager.pageItems.map((r) => (
                     <tr key={r.id}>
                       <td>{r.date}</td>
                       <td>{r.startTime}</td>
@@ -263,6 +284,12 @@ export default function StaffPage() {
               </tbody>
             </table>
           </div>
+          <Pager
+            pageCount={requestsPager.pageCount}
+            currentPage={requestsPager.currentPage}
+            onPrev={() => requestsPager.setPage(requestsPager.currentPage - 1)}
+            onNext={() => requestsPager.setPage(requestsPager.currentPage + 1)}
+          />
         </div>
       </div>
 

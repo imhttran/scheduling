@@ -14,6 +14,7 @@ import { PageFooter } from "@/components/PageFooter";
 import { PageTitle } from "@/components/PageTitle";
 import { Modal } from "@/components/Modal";
 import { JobModal, type JobInput } from "@/components/JobModal";
+import { Pager, SortableTh, useSortablePage } from "@/lib/pagination";
 
 type Location = {
   id: number;
@@ -83,6 +84,21 @@ type DepartmentModal =
 type JobModal = { mode: "create" } | { mode: "edit"; job: Job } | null;
 type UserModal = { mode: "create" } | { mode: "edit"; user: User } | null;
 
+function userValue(u: User, key: string) {
+  return u[key as keyof User];
+}
+function locValue(l: Location, key: string) {
+  return l[key as keyof Location];
+}
+function deptValue(d: Department, key: string) {
+  return d[key as keyof Department];
+}
+function jobValue(j: Job, key: string) {
+  if (key === "workers") return j.currentWorkers;
+  if (key === "holidays") return j.holidays.length;
+  return j[key as keyof Job];
+}
+
 export default function AdminPage() {
   const [token, setToken] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -90,17 +106,12 @@ export default function AdminPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [sortBy, setSortBy] = useState<"email" | "role" | "disabled">("email");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [locationModal, setLocationModal] = useState<LocationModal>(null);
   const [departmentModal, setDepartmentModal] = useState<DepartmentModal>(null);
   const [jobModal, setJobModal] = useState<JobModal>(null);
   const [userModal, setUserModal] = useState<UserModal>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
-
-  const USERS_PER_PAGE = 10;
 
   const q = search.trim().toLowerCase();
   const filteredUsers = q
@@ -111,28 +122,15 @@ export default function AdminPage() {
           (u.role ?? "").toLowerCase().includes(q),
       )
     : users;
-  const sortedUsers = [...filteredUsers].sort((a, b) => {
-    const av = String(a[sortBy]);
-    const bv = String(b[sortBy]);
-    const cmp = av.localeCompare(bv, undefined, { numeric: true });
-    return sortDir === "asc" ? cmp : -cmp;
-  });
-  const pageCount = Math.max(1, Math.ceil(sortedUsers.length / USERS_PER_PAGE));
-  const currentPage = Math.min(page, pageCount);
-  const pageUsers = sortedUsers.slice(
-    (currentPage - 1) * USERS_PER_PAGE,
-    currentPage * USERS_PER_PAGE,
-  );
 
-  const toggleSort = (key: "email" | "role" | "disabled") => {
-    if (sortBy === key) {
-      setSortDir(sortDir === "asc" ? "desc" : "asc");
-    } else {
-      setSortBy(key);
-      setSortDir("asc");
-    }
-    setPage(1);
-  };
+  const usersGrid = useSortablePage<User>(filteredUsers, userValue, "email");
+  const locationsGrid = useSortablePage<Location>(locations, locValue, "name");
+  const departmentsGrid = useSortablePage<Department>(
+    departments,
+    deptValue,
+    "name",
+  );
+  const jobsGrid = useSortablePage<Job>(jobs, jobValue, "name");
 
   const load = useCallback(async (authToken: string) => {
     const [l, d, j, u] = await Promise.all([
@@ -367,12 +365,48 @@ export default function AdminPage() {
               <table className="user-table">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Abbr</th>
-                    <th>Address</th>
-                    <th>City</th>
-                    <th>State</th>
-                    <th>Zip</th>
+                    <SortableTh
+                      label="Name"
+                      sortKey="name"
+                      sortBy={locationsGrid.sortBy}
+                      sortDir={locationsGrid.sortDir}
+                      onSort={() => locationsGrid.toggleSort("name")}
+                    />
+                    <SortableTh
+                      label="Abbr"
+                      sortKey="abbreviation"
+                      sortBy={locationsGrid.sortBy}
+                      sortDir={locationsGrid.sortDir}
+                      onSort={() => locationsGrid.toggleSort("abbreviation")}
+                    />
+                    <SortableTh
+                      label="Address"
+                      sortKey="address"
+                      sortBy={locationsGrid.sortBy}
+                      sortDir={locationsGrid.sortDir}
+                      onSort={() => locationsGrid.toggleSort("address")}
+                    />
+                    <SortableTh
+                      label="City"
+                      sortKey="city"
+                      sortBy={locationsGrid.sortBy}
+                      sortDir={locationsGrid.sortDir}
+                      onSort={() => locationsGrid.toggleSort("city")}
+                    />
+                    <SortableTh
+                      label="State"
+                      sortKey="state"
+                      sortBy={locationsGrid.sortBy}
+                      sortDir={locationsGrid.sortDir}
+                      onSort={() => locationsGrid.toggleSort("state")}
+                    />
+                    <SortableTh
+                      label="Zip"
+                      sortKey="zip"
+                      sortBy={locationsGrid.sortBy}
+                      sortDir={locationsGrid.sortDir}
+                      onSort={() => locationsGrid.toggleSort("zip")}
+                    />
                     <th>Manager</th>
                     <th></th>
                   </tr>
@@ -383,7 +417,7 @@ export default function AdminPage() {
                       <td colSpan={8}>No locations yet.</td>
                     </tr>
                   ) : (
-                    locations.map((l) => (
+                    locationsGrid.pageItems.map((l) => (
                       <tr key={l.id}>
                         <td>{l.name}</td>
                         <td>{l.abbreviation ?? "—"}</td>
@@ -437,6 +471,16 @@ export default function AdminPage() {
                 </tbody>
               </table>
             </div>
+            <Pager
+              pageCount={locationsGrid.pageCount}
+              currentPage={locationsGrid.currentPage}
+              onPrev={() =>
+                locationsGrid.setPage(locationsGrid.currentPage - 1)
+              }
+              onNext={() =>
+                locationsGrid.setPage(locationsGrid.currentPage + 1)
+              }
+            />
           </div>
 
           <div className="user-list-section" id="departments">
@@ -454,9 +498,29 @@ export default function AdminPage() {
               <table className="user-table">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Code</th>
-                    <th>Location</th>
+                    <SortableTh
+                      label="Name"
+                      sortKey="name"
+                      sortBy={departmentsGrid.sortBy}
+                      sortDir={departmentsGrid.sortDir}
+                      onSort={() => departmentsGrid.toggleSort("name")}
+                    />
+                    <SortableTh
+                      label="Code"
+                      sortKey="departmentCode"
+                      sortBy={departmentsGrid.sortBy}
+                      sortDir={departmentsGrid.sortDir}
+                      onSort={() =>
+                        departmentsGrid.toggleSort("departmentCode")
+                      }
+                    />
+                    <SortableTh
+                      label="Location"
+                      sortKey="locationName"
+                      sortBy={departmentsGrid.sortBy}
+                      sortDir={departmentsGrid.sortDir}
+                      onSort={() => departmentsGrid.toggleSort("locationName")}
+                    />
                     <th></th>
                   </tr>
                 </thead>
@@ -466,7 +530,7 @@ export default function AdminPage() {
                       <td colSpan={4}>No departments yet.</td>
                     </tr>
                   ) : (
-                    departments.map((d) => (
+                    departmentsGrid.pageItems.map((d) => (
                       <tr key={d.id}>
                         <td>{d.name}</td>
                         <td>{d.departmentCode ?? "—"}</td>
@@ -487,6 +551,16 @@ export default function AdminPage() {
                 </tbody>
               </table>
             </div>
+            <Pager
+              pageCount={departmentsGrid.pageCount}
+              currentPage={departmentsGrid.currentPage}
+              onPrev={() =>
+                departmentsGrid.setPage(departmentsGrid.currentPage - 1)
+              }
+              onNext={() =>
+                departmentsGrid.setPage(departmentsGrid.currentPage + 1)
+              }
+            />
           </div>
 
           <div className="user-list-section" id="jobs">
@@ -508,12 +582,48 @@ export default function AdminPage() {
               <table className="user-table">
                 <thead>
                   <tr>
-                    <th>Name</th>
-                    <th>Department</th>
-                    <th>Location</th>
-                    <th>Workers</th>
-                    <th>Weekly Hours</th>
-                    <th>Holidays</th>
+                    <SortableTh
+                      label="Name"
+                      sortKey="name"
+                      sortBy={jobsGrid.sortBy}
+                      sortDir={jobsGrid.sortDir}
+                      onSort={() => jobsGrid.toggleSort("name")}
+                    />
+                    <SortableTh
+                      label="Department"
+                      sortKey="departmentName"
+                      sortBy={jobsGrid.sortBy}
+                      sortDir={jobsGrid.sortDir}
+                      onSort={() => jobsGrid.toggleSort("departmentName")}
+                    />
+                    <SortableTh
+                      label="Location"
+                      sortKey="locationName"
+                      sortBy={jobsGrid.sortBy}
+                      sortDir={jobsGrid.sortDir}
+                      onSort={() => jobsGrid.toggleSort("locationName")}
+                    />
+                    <SortableTh
+                      label="Workers"
+                      sortKey="workers"
+                      sortBy={jobsGrid.sortBy}
+                      sortDir={jobsGrid.sortDir}
+                      onSort={() => jobsGrid.toggleSort("workers")}
+                    />
+                    <SortableTh
+                      label="Weekly Hours"
+                      sortKey="weeklyHours"
+                      sortBy={jobsGrid.sortBy}
+                      sortDir={jobsGrid.sortDir}
+                      onSort={() => jobsGrid.toggleSort("weeklyHours")}
+                    />
+                    <SortableTh
+                      label="Holidays"
+                      sortKey="holidays"
+                      sortBy={jobsGrid.sortBy}
+                      sortDir={jobsGrid.sortDir}
+                      onSort={() => jobsGrid.toggleSort("holidays")}
+                    />
                     <th></th>
                   </tr>
                 </thead>
@@ -523,7 +633,7 @@ export default function AdminPage() {
                       <td colSpan={7}>No jobs yet.</td>
                     </tr>
                   ) : (
-                    jobs.map((j) => (
+                    jobsGrid.pageItems.map((j) => (
                       <tr key={j.id}>
                         <td>{j.name}</td>
                         <td>{j.departmentName}</td>
@@ -551,6 +661,12 @@ export default function AdminPage() {
                 </tbody>
               </table>
             </div>
+            <Pager
+              pageCount={jobsGrid.pageCount}
+              currentPage={jobsGrid.currentPage}
+              onPrev={() => jobsGrid.setPage(jobsGrid.currentPage - 1)}
+              onNext={() => jobsGrid.setPage(jobsGrid.currentPage + 1)}
+            />
           </div>
 
           <div className="user-list-section" id="access-control">
@@ -563,7 +679,7 @@ export default function AdminPage() {
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
-                  setPage(1);
+                  usersGrid.setPage(1);
                 }}
               />
               <button
@@ -578,37 +694,28 @@ export default function AdminPage() {
               <table className="user-table">
                 <thead>
                   <tr>
-                    <th
-                      className="sortable"
-                      onClick={() => toggleSort("email")}
-                    >
-                      Email
-                      {sortBy === "email"
-                        ? sortDir === "asc"
-                          ? " ▲"
-                          : " ▼"
-                        : ""}
-                    </th>
+                    <SortableTh
+                      label="Email"
+                      sortKey="email"
+                      sortBy={usersGrid.sortBy}
+                      sortDir={usersGrid.sortDir}
+                      onSort={() => usersGrid.toggleSort("email")}
+                    />
                     <th>UID</th>
-                    <th className="sortable" onClick={() => toggleSort("role")}>
-                      Role
-                      {sortBy === "role"
-                        ? sortDir === "asc"
-                          ? " ▲"
-                          : " ▼"
-                        : ""}
-                    </th>
-                    <th
-                      className="sortable"
-                      onClick={() => toggleSort("disabled")}
-                    >
-                      Status
-                      {sortBy === "disabled"
-                        ? sortDir === "asc"
-                          ? " ▲"
-                          : " ▼"
-                        : ""}
-                    </th>
+                    <SortableTh
+                      label="Role"
+                      sortKey="role"
+                      sortBy={usersGrid.sortBy}
+                      sortDir={usersGrid.sortDir}
+                      onSort={() => usersGrid.toggleSort("role")}
+                    />
+                    <SortableTh
+                      label="Status"
+                      sortKey="disabled"
+                      sortBy={usersGrid.sortBy}
+                      sortDir={usersGrid.sortDir}
+                      onSort={() => usersGrid.toggleSort("disabled")}
+                    />
                     <th></th>
                   </tr>
                 </thead>
@@ -618,7 +725,7 @@ export default function AdminPage() {
                       <td colSpan={5}>No users.</td>
                     </tr>
                   ) : (
-                    pageUsers.map((u) => (
+                    usersGrid.pageItems.map((u) => (
                       <tr key={u.id}>
                         <td>{u.email}</td>
                         <td>{u.uid ?? "—"}</td>
@@ -665,27 +772,12 @@ export default function AdminPage() {
                 </tbody>
               </table>
             </div>
-            {pageCount > 1 && (
-              <div className="user-pager">
-                <button
-                  type="button"
-                  disabled={currentPage <= 1}
-                  onClick={() => setPage(currentPage - 1)}
-                >
-                  Prev
-                </button>
-                <span>
-                  Page {currentPage} of {pageCount}
-                </span>
-                <button
-                  type="button"
-                  disabled={currentPage >= pageCount}
-                  onClick={() => setPage(currentPage + 1)}
-                >
-                  Next
-                </button>
-              </div>
-            )}
+            <Pager
+              pageCount={usersGrid.pageCount}
+              currentPage={usersGrid.currentPage}
+              onPrev={() => usersGrid.setPage(usersGrid.currentPage - 1)}
+              onNext={() => usersGrid.setPage(usersGrid.currentPage + 1)}
+            />
           </div>
         </div>
       </div>
