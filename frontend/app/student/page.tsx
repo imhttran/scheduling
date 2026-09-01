@@ -156,6 +156,9 @@ export default function StudentPage() {
           </>
         }
       >
+        <a className="page-nav-link" href="/student/calendar">
+          Calendar view
+        </a>
         <a className="logout-link" href="/" onClick={logout}>
           Logout
         </a>

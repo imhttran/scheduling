@@ -1456,7 +1456,13 @@ func denyRequest(w http.ResponseWriter, r *http.Request) {
 
 func myCalendar(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
-	monday := weekMondayOf(time.Now())
+	anchor := time.Now()
+	if d := r.URL.Query().Get("date"); d != "" {
+		if t, err := time.Parse("2006-01-02", d); err == nil {
+			anchor = t
+		}
+	}
+	monday := weekMondayOf(anchor)
 	rows, err := db.Query(r.Context(), `
 		SELECT w.id, w.date, w.start_time, w.end_time, d.name
 		FROM workqueue w JOIN departments d ON d.id = w.department_id
