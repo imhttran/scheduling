@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 import path from "node:path";
 
 const nextConfig: NextConfig = {
+  // Standalone output for Docker: creates minimal deployable app
+  output: "standalone",
   // This repo tree contains other package-lock.json files; keep file tracing
   // rooted at the frontend directory instead of letting Next infer one.
   outputFileTracingRoot: path.join(import.meta.dirname),

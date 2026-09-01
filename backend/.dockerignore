@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+.env.local
+*.md
+.DS_Store
+.vscode
+.idea
+*.log
+*.out
+coverage.out
+backend.pid

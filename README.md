@@ -81,6 +81,52 @@ skipped). To wipe and re-seed in one step, use `./manage.sh → [11]` (Re-seed).
 Columns:
 `email,password,firstname,lastname,address1,address2,city,state,zip,country,role,department,department_code,location,location_abbr,location_address,location_city,location_state,location_zip,location_country,phone,min_hours,max_hours`.
 
+## Running with Docker
+
+Prefer containers over the local `manage.sh` workflow? The repo ships a
+`docker-compose.yml` plus a `Makefile` of shortcuts. Full details are in
+**[docs/DOCKER.md](docs/DOCKER.md)**.
+
+### Switch to Docker
+
+1. **Copy the Docker env file** — it uses non-conflicting ports so Docker can
+   run alongside `manage.sh`:
+
+   ```bash
+   cp .env.docker .env
+   ```
+
+   This maps the frontend to **:3001**, backend to **:8081**, and Postgres to
+   **:5433**. To use the default ports instead, edit `.env` and set
+   `FRONTEND_PORT=3000`, `BACKEND_PORT=8080`, `POSTGRES_PORT=5432`.
+
+2. **Build and start:**
+
+   ```bash
+   make docker-up
+   # or: docker-compose up --build
+   ```
+
+3. **Open the app** at **http://localhost:3001** and log in with the dev admin
+   **admin@mail.edu** / **Password1234!**.
+
+### Everyday commands
+
+| Task                 | Command               |
+| -------------------- | --------------------- |
+| Start                | `make docker-up`      |
+| Stop                 | `make docker-down`    |
+| Status               | `make docker-status`  |
+| Follow logs          | `make docker-logs`    |
+| Rebuild from scratch | `make docker-rebuild` |
+| Re-seed database     | `make docker-reseed`  |
+
+### Switching back to local
+
+Stop the containers (`make docker-down`) and use `./manage.sh` as before. The
+two workflows share the same codebase and can coexist because Docker uses
+different ports.
+
 ## Docs
 
 - **[docs/FEATURE.md](docs/FEATURE.md)** — what this build does

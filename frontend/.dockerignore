@@ -1,0 +1,15 @@
+.git
+.gitignore
+.env
+.env.local
+*.md
+.DS_Store
+.vscode
+.idea
+*.log
+node_modules
+.next
+coverage
+.turbo
+dist
+build
