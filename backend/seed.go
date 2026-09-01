@@ -21,30 +21,33 @@ import (
 // whose email already exists are skipped. Each row's department is created
 // under its location; managers are scoped to their row's location.
 
-func seedFromCSV(ctx context.Context) {
-	if cfg.Env != "development" {
-		return
-	}
+// readSeedCSV finds and parses a CSV file next to the backend (or one dir up).
+func readSeedCSV(name string) ([][]string, error) {
 	path := ""
 	for _, dir := range []string{".", ".."} {
-		if _, err := os.Stat(filepath.Join(dir, "seed.csv")); err == nil {
-			path = filepath.Join(dir, "seed.csv")
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			path = filepath.Join(dir, name)
 			break
 		}
 	}
 	if path == "" {
-		return
+		return nil, os.ErrNotExist
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		log.Printf("[seed] open %s: %v", path, err)
-		return
+		return nil, err
 	}
 	defer f.Close()
+	return csv.NewReader(f).ReadAll()
+}
 
-	records, err := csv.NewReader(f).ReadAll()
+func seedFromCSV(ctx context.Context) {
+	if cfg.Env != "development" {
+		return
+	}
+	records, err := readSeedCSV("seed.csv")
 	if err != nil {
-		log.Printf("[seed] parse %s: %v", path, err)
+		log.Printf("[seed] seed.csv: %v", err)
 		return
 	}
 	if len(records) < 2 {
@@ -53,7 +56,7 @@ func seedFromCSV(ctx context.Context) {
 
 	seeded := 0
 	for _, row := range records[1:] {
-		if len(row) < 24 {
+		if len(row) < 26 {
 			continue
 		}
 		email, password := strings.TrimSpace(row[0]), row[1]
@@ -69,6 +72,11 @@ func seedFromCSV(ctx context.Context) {
 		uid := row[21]
 		minHours, _ := strconv.Atoi(row[22])
 		maxHours, _ := strconv.Atoi(row[23])
+		workerType := row[24]
+		var hourlyLimit *int
+		if v, err := strconv.Atoi(row[25]); err == nil {
+			hourlyLimit = &v
+		}
 
 		var exists bool
 		if err := db.QueryRow(ctx,
@@ -111,9 +119,9 @@ func seedFromCSV(ctx context.Context) {
 
 		var userID int
 		if err := db.QueryRow(ctx, `
-			INSERT INTO users (email, uid, password, role, email_verified)
-			VALUES ($1, NULLIF($2, ''), $3, $4, true) RETURNING id`,
-			email, uid, hashPassword(password), role).Scan(&userID); err != nil {
+			INSERT INTO users (email, uid, password, role, worker_type, hourly_limit, email_verified)
+			VALUES ($1, NULLIF($2, ''), $3, $4, COALESCE(NULLIF($5, ''), 'student'), $6, true) RETURNING id`,
+			email, uid, hashPassword(password), role, workerType, hourlyLimit).Scan(&userID); err != nil {
 			log.Printf("[seed] %s user: %v", email, err)
 			continue
 		}
@@ -160,18 +168,239 @@ func seedFromCSV(ctx context.Context) {
 				log.Printf("[seed] %s manager: %v", email, err)
 			}
 		case "scheduler":
-			// Schedulers are location-scoped like managers, so seed the same
-			// assignment so their scoped scheduling queries resolve.
+			// Schedulers are location-scoped like managers (so their reference
+			// lists resolve) and department-scoped for the schedule itself.
 			if _, err := db.Exec(ctx, `
 				INSERT INTO manager_assignments (user_id, location_id)
 				VALUES ($1, $2)`, userID, locID); err != nil {
 				log.Printf("[seed] %s scheduler: %v", email, err)
 			}
+			if deptID != 0 {
+				if _, err := db.Exec(ctx, `
+					INSERT INTO scheduler_assignments (user_id, department_id)
+					VALUES ($1, $2)`, userID, deptID); err != nil {
+					log.Printf("[seed] %s scheduler dept: %v", email, err)
+				}
+			}
 		}
 		seeded++
 	}
 	if seeded > 0 {
-		log.Printf("[seed] seeded %d users from %s", seeded, path)
+		log.Printf("[seed] seeded %d users from seed.csv", seeded)
+	}
+}
+
+// Dev-only: seeds extra jobs (jobs.csv) and full-time staff (staff.csv) on top
+// of the one-per-department defaults. Idempotent — existing jobs/users are
+// skipped.
+func seedExtraData(ctx context.Context) {
+	if cfg.Env != "development" {
+		return
+	}
+	// resolveDepartment finds (or creates) a department by name under a location.
+	resolveDepartment := func(name, location string) (int, error) {
+		var locID int
+		if err := db.QueryRow(ctx, `SELECT id FROM locations WHERE name = $1`, location).Scan(&locID); err != nil {
+			return 0, err
+		}
+		var deptID int
+		err := db.QueryRow(ctx, `
+			INSERT INTO departments (name, department_code, location_id)
+			VALUES ($1, 'FAC', $2)
+			ON CONFLICT (name) DO UPDATE SET location_id = EXCLUDED.location_id
+			RETURNING id`, name, locID).Scan(&deptID)
+		return deptID, err
+	}
+
+	// Extra jobs.
+	jobs, err := readSeedCSV("jobs.csv")
+	if err != nil {
+		log.Printf("[seed] jobs.csv: %v", err)
+		return
+	}
+	seededJobs := 0
+	for _, row := range jobs[1:] {
+		if len(row) < 4 {
+			continue
+		}
+		deptID, err := resolveDepartment(row[1], row[2])
+		if err != nil {
+			log.Printf("[seed] jobs dept: %v", err)
+			continue
+		}
+		optimal, _ := strconv.Atoi(row[3])
+		var jobID int
+		err = db.QueryRow(ctx, `
+			INSERT INTO jobs (name, department_id, optimal_workers)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (name, department_id) DO NOTHING
+			RETURNING id`, row[0], deptID, optimal).Scan(&jobID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue // already exists
+		}
+		if err != nil {
+			log.Printf("[seed] jobs: %v", err)
+			continue
+		}
+		if row[0] != "Security Guard" {
+			if err := insertDefaultJobSchedules(ctx, jobID); err != nil {
+				log.Printf("[seed] jobs schedules: %v", err)
+			}
+		}
+		seededJobs++
+	}
+
+	// Full-time staff. Start UIDs above the highest existing one so they never
+	// collide with users seeded from seed.csv (which uses U00001..U00055).
+	staff, err := readSeedCSV("staff.csv")
+	if err != nil {
+		log.Printf("[seed] staff.csv: %v", err)
+		return
+	}
+	var maxUID int
+	if err := db.QueryRow(ctx, `
+		SELECT COALESCE(MAX((substring(uid, 2)::int)), 0) FROM users
+		WHERE uid ~ '^U[0-9]+$'`).Scan(&maxUID); err != nil {
+		log.Printf("[seed] staff uid: %v", err)
+		return
+	}
+	uidNum, phoneNum := maxUID+1, 138
+	seededStaff := 0
+	for _, row := range staff[1:] {
+		if len(row) < 7 {
+			continue
+		}
+		email, first, last := row[0], row[1], row[2]
+		jobName, deptName, locName, workerType := row[3], row[4], row[5], row[6]
+		deptID, err := resolveDepartment(deptName, locName)
+		if err != nil {
+			log.Printf("[seed] staff dept: %v", err)
+			continue
+		}
+		var jobID int
+		if err := db.QueryRow(ctx, `SELECT id FROM jobs WHERE name = $1 AND department_id = $2`, jobName, deptID).Scan(&jobID); err != nil {
+			log.Printf("[seed] staff job: %v", err)
+			continue
+		}
+		uid := fmt.Sprintf("U%05d", uidNum)
+		phone := fmt.Sprintf("512-555-%04d", phoneNum)
+		uidNum++
+		phoneNum++
+		var userID int
+		err = db.QueryRow(ctx, `
+			INSERT INTO users (email, uid, password, role, worker_type, email_verified)
+			VALUES ($1, $2, $3, 'staff', $4, true)
+			ON CONFLICT (email) DO NOTHING
+			RETURNING id`, email, uid, hashPassword("Fulltime1234!"), workerType).Scan(&userID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue // user already exists
+		}
+		if err != nil {
+			log.Printf("[seed] staff user: %v", err)
+			continue
+		}
+		if _, err := db.Exec(ctx, `
+			INSERT INTO user_profiles (user_id, first_name, last_name, address, city, state, zip, country, phone)
+			VALUES ($1, $2, $3, '100 Campus Dr', 'Austin', 'TX', '78705', 'US', $4)`,
+			userID, first, last, phone); err != nil {
+			log.Printf("[seed] staff profile: %v", err)
+		}
+		if _, err := db.Exec(ctx, `
+			INSERT INTO student_jobs (user_id, job_id, min_hours, max_hours)
+			VALUES ($1, $2, 0, 40)`, userID, jobID); err != nil {
+			log.Printf("[seed] staff assignment: %v", err)
+		}
+		seededStaff++
+	}
+	if seededJobs > 0 {
+		log.Printf("[seed] seeded %d extra jobs", seededJobs)
+	}
+	if seededStaff > 0 {
+		log.Printf("[seed] seeded %d full-time staff", seededStaff)
+	}
+}
+
+// securityShifts are the three 8h shifts that give 24h coverage, every day of
+// the week (00:00-08:00, 08:00-16:00, 16:00-24:00).
+var securityShifts = []struct {
+	dow        int
+	start, end string
+}{
+	{0, "00:00", "08:00"}, {0, "08:00", "16:00"}, {0, "16:00", "24:00"},
+	{1, "00:00", "08:00"}, {1, "08:00", "16:00"}, {1, "16:00", "24:00"},
+	{2, "00:00", "08:00"}, {2, "08:00", "16:00"}, {2, "16:00", "24:00"},
+	{3, "00:00", "08:00"}, {3, "08:00", "16:00"}, {3, "16:00", "24:00"},
+	{4, "00:00", "08:00"}, {4, "08:00", "16:00"}, {4, "16:00", "24:00"},
+	{5, "00:00", "08:00"}, {5, "08:00", "16:00"}, {5, "16:00", "24:00"},
+	{6, "00:00", "08:00"}, {6, "08:00", "16:00"}, {6, "16:00", "24:00"},
+}
+
+// Dev-only: gives every Security Guard job 24h coverage (three 8h shifts per
+// day, all week). Idempotent — replaces whatever schedules the job had so a
+// re-run converges on full coverage.
+func seedSecuritySchedules(ctx context.Context) {
+	if cfg.Env != "development" {
+		return
+	}
+	rows, err := db.Query(ctx, `SELECT id FROM jobs WHERE name = 'Security Guard'`)
+	if err != nil {
+		log.Printf("[seed] security schedules: %v", err)
+		return
+	}
+	defer rows.Close()
+	var jobIDs []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			log.Printf("[seed] security schedules: %v", err)
+			return
+		}
+		jobIDs = append(jobIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("[seed] security schedules: %v", err)
+		return
+	}
+	seeded := 0
+	for _, jobID := range jobIDs {
+		if _, err := db.Exec(ctx, `DELETE FROM job_schedules WHERE job_id = $1`, jobID); err != nil {
+			log.Printf("[seed] security schedules: %v", err)
+			return
+		}
+		for _, s := range securityShifts {
+			if _, err := db.Exec(ctx, `
+				INSERT INTO job_schedules (job_id, day_of_week, start_time, end_time)
+				VALUES ($1, $2, $3, $4)`, jobID, s.dow, s.start, s.end); err != nil {
+				log.Printf("[seed] security schedules: %v", err)
+				return
+			}
+		}
+		seeded++
+	}
+	if seeded > 0 {
+		log.Printf("[seed] set 24h schedules for %d security jobs", seeded)
+	}
+}
+
+// Dev-only: sets each default job's optimal_workers to match the number of
+// active workers assigned to it, so the Job Requirements view reads sensibly
+// (e.g. 7/7 instead of 7/1). Only touches jobs named after their department
+// (the one-per-department defaults); extra jobs keep their explicit values.
+// Idempotent.
+func seedJobOptimalWorkers(ctx context.Context) {
+	if cfg.Env != "development" {
+		return
+	}
+	tag, err := db.Exec(ctx, `
+		UPDATE jobs j SET optimal_workers = (
+			SELECT COUNT(*) FROM student_jobs sj WHERE sj.job_id = j.id AND sj.active)
+		WHERE j.name = (SELECT d.name FROM departments d WHERE d.id = j.department_id)`)
+	if err != nil {
+		log.Printf("[seed] job optimal workers: %v", err)
+		return
+	}
+	if tag.RowsAffected() > 0 {
+		log.Printf("[seed] set optimal_workers for %d default jobs", tag.RowsAffected())
 	}
 }
 
@@ -182,7 +411,7 @@ func seedWorkqueue(ctx context.Context) {
 		return
 	}
 	rows, err := db.Query(ctx, `
-		SELECT j.department_id, js.day_of_week, js.start_time, js.end_time
+		SELECT j.department_id, js.job_id, js.day_of_week, js.start_time, js.end_time
 		FROM jobs j
 		JOIN job_schedules js ON js.job_id = j.id`)
 	if err != nil {
@@ -191,13 +420,13 @@ func seedWorkqueue(ctx context.Context) {
 	}
 	defer rows.Close()
 	type shift struct {
-		deptID, dow int
-		start, end  string
+		deptID, jobID, dow int
+		start, end         string
 	}
 	var shifts []shift
 	for rows.Next() {
 		var s shift
-		if err := rows.Scan(&s.deptID, &s.dow, &s.start, &s.end); err != nil {
+		if err := rows.Scan(&s.deptID, &s.jobID, &s.dow, &s.start, &s.end); err != nil {
 			log.Printf("[seed] workqueue: %v", err)
 			return
 		}
@@ -214,11 +443,10 @@ func seedWorkqueue(ctx context.Context) {
 		for week := 0; week < 2; week++ {
 			date := weekDate(monday.AddDate(0, 0, week*7), s.dow)
 			tag, err := db.Exec(ctx, `
-				INSERT INTO workqueue (department_id, date, start_time, end_time, status)
-				SELECT $1, $2, $3, $4, 'open'
+				INSERT INTO workqueue (department_id, job_id, date, start_time, end_time, status)
+				SELECT $1, $2, $3, $4, $5, 'open'
 				WHERE NOT EXISTS (
-					SELECT 1 FROM workqueue WHERE department_id = $1 AND date = $2 AND start_time = $3)`,
-				s.deptID, date, s.start, s.end)
+					SELECT 1 FROM workqueue WHERE job_id = $2 AND date = $3 AND start_time = $4)`, s.deptID, s.jobID, date, s.start, s.end)
 			if err != nil {
 				log.Printf("[seed] workqueue: %v", err)
 				return
@@ -298,15 +526,16 @@ func seedStudentAvailability(ctx context.Context) {
 
 // assignShift is an open workqueue shift eligible for assignment.
 type assignShift struct {
-	id, dept, week int
-	hours          float64
+	id, job, dept, week int
+	hours               float64
 }
 
-// assignWorker is a worker eligible to take shifts, with their weekly cap.
+// assignWorker is a worker eligible to take shifts, with their weekly cap and
+// the jobs they're qualified for.
 type assignWorker struct {
-	id    int
-	depts map[int]bool
-	cap   float64
+	id   int
+	jobs map[int]bool
+	cap  float64
 }
 
 type weekUsage struct{ w0, w1 float64 }
@@ -339,11 +568,11 @@ func planAssignments(shifts []assignShift, workers []assignWorker, targetFractio
 		if assignedHours >= target {
 			break
 		}
-		// Candidate workers in this department with weekly capacity.
+		// Candidate workers qualified for this job with weekly capacity.
 		var candidates []int
 		for _, wi := range order {
 			w := workers[wi]
-			if !w.depts[s.dept] {
+			if !w.jobs[s.job] {
 				continue
 			}
 			var weekHours float64
@@ -381,7 +610,7 @@ func seedAssignments(ctx context.Context) {
 		return
 	}
 	rows, err := db.Query(ctx, `
-		SELECT sj.user_id, j.department_id
+		SELECT sj.user_id, j.id AS job_id
 		FROM student_jobs sj JOIN jobs j ON j.id = sj.job_id
 		WHERE sj.active`)
 	if err != nil {
@@ -391,19 +620,19 @@ func seedAssignments(ctx context.Context) {
 	workers := map[int]*assignWorker{}
 	var order []int
 	for rows.Next() {
-		var uid, dept int
-		if err := rows.Scan(&uid, &dept); err != nil {
+		var uid, jobID int
+		if err := rows.Scan(&uid, &jobID); err != nil {
 			rows.Close()
 			log.Printf("[seed] assignments: %v", err)
 			return
 		}
 		w, ok := workers[uid]
 		if !ok {
-			w = &assignWorker{id: uid, depts: map[int]bool{}}
+			w = &assignWorker{id: uid, jobs: map[int]bool{}}
 			workers[uid] = w
 			order = append(order, uid)
 		}
-		w.depts[dept] = true
+		w.jobs[jobID] = true
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -422,7 +651,7 @@ func seedAssignments(ctx context.Context) {
 	// Open shifts in the next two weeks.
 	monday := weekMondayOf(time.Now())
 	srows, err := db.Query(ctx, `
-		SELECT id, department_id, date, start_time, end_time FROM workqueue
+		SELECT id, department_id, job_id, date, start_time, end_time FROM workqueue
 		WHERE status = 'open' AND date >= $1 AND date < $2
 		ORDER BY date, start_time`, monday, monday.AddDate(0, 0, 14))
 	if err != nil {
@@ -434,7 +663,7 @@ func seedAssignments(ctx context.Context) {
 		var s assignShift
 		var date time.Time
 		var start, end string
-		if err := srows.Scan(&s.id, &s.dept, &date, &start, &end); err != nil {
+		if err := srows.Scan(&s.id, &s.dept, &s.job, &date, &start, &end); err != nil {
 			srows.Close()
 			log.Printf("[seed] assignments: %v", err)
 			return
@@ -455,7 +684,7 @@ func seedAssignments(ctx context.Context) {
 	for _, uid := range order {
 		workerList = append(workerList, *workers[uid])
 	}
-	plan := planAssignments(shifts, workerList, 0.8)
+	plan := planAssignments(shifts, workerList, 0.9)
 
 	assigned := 0
 	for shiftID, userID := range plan {
@@ -476,6 +705,109 @@ func seedAssignments(ctx context.Context) {
 			}
 		}
 		log.Printf("[seed] assigned %d workqueue shifts (%.0f%% of %.0fh)", assigned, 100*filled/total, total)
+	}
+}
+
+// Dev-only: assigns every open Security Guard shift to a security guard so the
+// building is fully covered 24h. seedAssignments leaves ~10% of the workqueue
+// open globally; this tops up the security shifts to 100% using the guards'
+// remaining weekly capacity. Idempotent — only touches open shifts.
+func seedSecurityAssignments(ctx context.Context) {
+	if cfg.Env != "development" {
+		return
+	}
+	// Security guards: users assigned to a Security Guard job.
+	rows, err := db.Query(ctx, `
+		SELECT DISTINCT sj.user_id, j.id AS job_id
+		FROM student_jobs sj JOIN jobs j ON j.id = sj.job_id
+		WHERE j.name = 'Security Guard' AND sj.active`)
+	if err != nil {
+		log.Printf("[seed] security assignments: %v", err)
+		return
+	}
+	workers := map[int]*assignWorker{}
+	var order []int
+	for rows.Next() {
+		var uid, jobID int
+		if err := rows.Scan(&uid, &jobID); err != nil {
+			rows.Close()
+			log.Printf("[seed] security assignments: %v", err)
+			return
+		}
+		w, ok := workers[uid]
+		if !ok {
+			w = &assignWorker{id: uid, jobs: map[int]bool{}}
+			workers[uid] = w
+			order = append(order, uid)
+		}
+		w.jobs[jobID] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		log.Printf("[seed] security assignments: %v", err)
+		return
+	}
+	for _, uid := range order {
+		wt, hl, err := workerSettings(ctx, uid)
+		if err != nil {
+			log.Printf("[seed] security assignments: %v", err)
+			return
+		}
+		workers[uid].cap = workerPolicyFor(wt, hl).cap
+	}
+
+	// Open security shifts in the next two weeks.
+	monday := weekMondayOf(time.Now())
+	srows, err := db.Query(ctx, `
+		SELECT w.id, w.department_id, w.job_id, w.date, w.start_time, w.end_time
+		FROM workqueue w JOIN jobs j ON j.id = w.job_id
+		WHERE w.status = 'open' AND j.name = 'Security Guard'
+		  AND w.date >= $1 AND w.date < $2
+		ORDER BY w.date, w.start_time`, monday, monday.AddDate(0, 0, 14))
+	if err != nil {
+		log.Printf("[seed] security assignments: %v", err)
+		return
+	}
+	var shifts []assignShift
+	for srows.Next() {
+		var s assignShift
+		var date time.Time
+		var start, end string
+		if err := srows.Scan(&s.id, &s.dept, &s.job, &date, &start, &end); err != nil {
+			srows.Close()
+			log.Printf("[seed] security assignments: %v", err)
+			return
+		}
+		if date.After(monday.AddDate(0, 0, 6)) {
+			s.week = 1
+		}
+		s.hours = hoursBetween(start, end)
+		shifts = append(shifts, s)
+	}
+	srows.Close()
+	if err := srows.Err(); err != nil {
+		log.Printf("[seed] security assignments: %v", err)
+		return
+	}
+
+	var workerList []assignWorker
+	for _, uid := range order {
+		workerList = append(workerList, *workers[uid])
+	}
+	plan := planAssignments(shifts, workerList, 1.0)
+
+	assigned := 0
+	for shiftID, userID := range plan {
+		if _, err := db.Exec(ctx,
+			`UPDATE workqueue SET status = 'assigned', assigned_user_id = $1 WHERE id = $2 AND status = 'open'`,
+			userID, shiftID); err != nil {
+			log.Printf("[seed] security assignments: %v", err)
+			return
+		}
+		assigned++
+	}
+	if assigned > 0 {
+		log.Printf("[seed] assigned %d security shifts to guards", assigned)
 	}
 }
 
@@ -518,32 +850,6 @@ func seedStaff(ctx context.Context) {
 			VALUES ($1, $2, 0, 40)`, staffID, jobID); err != nil {
 			log.Printf("[seed] staff job assignment: %v", err)
 			return
-		}
-	}
-}
-
-// Dev-only: converts a few students into staff (full-time and part-time) so the
-// staff screen and worker management have variety.
-func seedStaffConversions(ctx context.Context) {
-	if cfg.Env != "development" {
-		return
-	}
-	limit := func(n int) *int { return &n }
-	conversions := []struct {
-		email       string
-		workerType  string
-		hourlyLimit *int
-	}{
-		{"fulltime1@mail.edu", "fulltime", nil},
-		{"hourly2@mail.edu", "hourly", limit(20)},
-		{"fulltime3@mail.edu", "fulltime", nil},
-		{"hourly4@mail.edu", "hourly", limit(15)},
-	}
-	for _, c := range conversions {
-		if _, err := db.Exec(ctx, `
-			UPDATE users SET role = 'staff', worker_type = $1, hourly_limit = $2
-			WHERE email = $3`, c.workerType, c.hourlyLimit, c.email); err != nil {
-			log.Printf("[seed] staff conversion %s: %v", c.email, err)
 		}
 	}
 }

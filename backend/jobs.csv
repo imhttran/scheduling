@@ -1,0 +1,18 @@
+name,department,location,optimal_workers
+Dishwashing,dining,Jester,3
+Front Desk,residential life,Jester,2
+Maintenance,facility,Kin Solving,3
+Front Office,business service,Little Field,2
+Events,marketing,Pation Cafe,2
+Security Guard,Facilities - Jester,Jester,5
+Facility Manager,Facilities - Jester,Jester,1
+Maintenance Technician,Facilities - Jester,Jester,1
+Security Guard,Facilities - Kin Solving,Kin Solving,5
+Facility Manager,Facilities - Kin Solving,Kin Solving,1
+Maintenance Technician,Facilities - Kin Solving,Kin Solving,1
+Security Guard,Facilities - Little Field,Little Field,5
+Facility Manager,Facilities - Little Field,Little Field,1
+Maintenance Technician,Facilities - Little Field,Little Field,1
+Security Guard,Facilities - Pation Cafe,Pation Cafe,5
+Facility Manager,Facilities - Pation Cafe,Pation Cafe,1
+Maintenance Technician,Facilities - Pation Cafe,Pation Cafe,1

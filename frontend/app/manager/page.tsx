@@ -595,7 +595,9 @@ export default function ManagerPage() {
               </button>
             </div>
             <p className="section-hint">
-              All slots in your location.{" "}
+              {role === "scheduler"
+                ? "All slots in your department."
+                : "All slots in your location."}{" "}
               {canAssign
                 ? "Assign a slot to a worker (or unassign it) to build the schedule."
                 : "Open shifts students can pick from, or return missed shifts here."}

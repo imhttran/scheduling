@@ -43,6 +43,18 @@ func managerLocationID(ctx context.Context, userID int) (int, error) {
 	return locID, err
 }
 
+// schedulerDepartmentID returns the department a scheduler is scoped to (0 if
+// none). Schedulers manage the schedule for a single department.
+func schedulerDepartmentID(ctx context.Context, userID int) (int, error) {
+	var deptID int
+	err := db.QueryRow(ctx,
+		`SELECT department_id FROM scheduler_assignments WHERE user_id = $1`, userID).Scan(&deptID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, nil
+	}
+	return deptID, err
+}
+
 // Date for a day_of_week (0=Sun..6=Sat) in the current week.
 func weekDate(monday time.Time, dow int) time.Time {
 	return monday.AddDate(0, 0, (dow+6)%7)
@@ -59,12 +71,18 @@ func parseTime(s string) string {
 
 func hoursBetween(start, end string) float64 {
 	// DB TIME columns scan as "HH:MM:SS.ffffff"; parse just the HH:MM part.
+	// time.Parse returns year 0000 for valid times, so normalize to year 2000
+	// for consistent math. "24:00" (end-of-day) isn't a valid 15:04 time, so
+	// treat it as 00:00 the next day.
 	parse := func(s string) time.Time {
 		if len(s) >= 5 {
 			s = s[:5]
 		}
+		if s == "24:00" {
+			return time.Date(2000, 1, 2, 0, 0, 0, 0, time.UTC)
+		}
 		t, _ := time.Parse("15:04", s)
-		return t
+		return t.AddDate(2000, 0, 0)
 	}
 	return parse(end).Sub(parse(start)).Hours()
 }
@@ -188,13 +206,23 @@ func listDepartments(w http.ResponseWriter, r *http.Request) {
 		FROM departments d JOIN locations l ON l.id = d.location_id`
 	args := []any{}
 	if !hasRole(u.Role, "admin") {
-		locID, err := managerLocationID(r.Context(), u.ID)
-		if err != nil {
-			respond500(w, "List Departments Error", err, false)
-			return
+		if u.Role == "scheduler" {
+			deptID, err := schedulerDepartmentID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "List Departments Error", err, false)
+				return
+			}
+			query += ` WHERE d.id = $1`
+			args = append(args, deptID)
+		} else {
+			locID, err := managerLocationID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "List Departments Error", err, false)
+				return
+			}
+			query += ` WHERE d.location_id = $1`
+			args = append(args, locID)
 		}
-		query += ` WHERE d.location_id = $1`
-		args = append(args, locID)
 	}
 	query += ` ORDER BY d.name`
 	rows, err := db.Query(r.Context(), query, args...)
@@ -462,6 +490,27 @@ func requestInCallerLocation(w http.ResponseWriter, r *http.Request, reqID int) 
 	if hasRole(u.Role, "admin") {
 		return true
 	}
+	if u.Role == "scheduler" {
+		deptID, err := schedulerDepartmentID(r.Context(), u.ID)
+		if err != nil {
+			respond500(w, "Location Error", err, false)
+			return false
+		}
+		var ok bool
+		if err := db.QueryRow(r.Context(), `
+			SELECT EXISTS (
+				SELECT 1 FROM schedule_requests r
+				JOIN workqueue w ON w.id = r.workqueue_id
+				WHERE r.id = $1 AND w.department_id = $2)`, reqID, deptID).Scan(&ok); err != nil {
+			respond500(w, "Location Error", err, false)
+			return false
+		}
+		if !ok {
+			respond(w, http.StatusForbidden, msg("Request not in your department"))
+			return false
+		}
+		return true
+	}
 	locID, err := managerLocationID(r.Context(), u.ID)
 	if err != nil {
 		respond500(w, "Location Error", err, false)
@@ -506,7 +555,7 @@ func insertDefaultJobSchedules(ctx context.Context, jobID int) error {
 		if _, err := db.Exec(ctx, `
 			INSERT INTO job_schedules (job_id, day_of_week, start_time, end_time)
 			VALUES ($1, $2, $3, $4)
-			ON CONFLICT (job_id, day_of_week) DO NOTHING`, jobID, s.DayOfWeek, s.StartTime, s.EndTime); err != nil {
+			ON CONFLICT (job_id, day_of_week, start_time) DO NOTHING`, jobID, s.DayOfWeek, s.StartTime, s.EndTime); err != nil {
 			return err
 		}
 	}
@@ -754,13 +803,23 @@ func listStudents(w http.ResponseWriter, r *http.Request) {
 		WHERE u.role IN ('student','staff')`
 	args := []any{}
 	if !hasRole(u.Role, "admin") {
-		locID, err := managerLocationID(r.Context(), u.ID)
-		if err != nil {
-			respond500(w, "List Students Error", err, false)
-			return
+		if u.Role == "scheduler" {
+			deptID, err := schedulerDepartmentID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "List Students Error", err, false)
+				return
+			}
+			query += ` AND j.department_id = $1`
+			args = append(args, deptID)
+		} else {
+			locID, err := managerLocationID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "List Students Error", err, false)
+				return
+			}
+			query += ` AND d.location_id = $1`
+			args = append(args, locID)
 		}
-		query += ` AND d.location_id = $1`
-		args = append(args, locID)
 	}
 	query += ` ORDER BY u.email, j.name`
 	rows, err := db.Query(r.Context(), query, args...)
@@ -984,17 +1043,29 @@ func createWorkqueueShift(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !hasRole(currentUser(r).Role, "admin") {
-		locID, err := managerLocationID(r.Context(), currentUser(r).ID)
-		if err != nil {
-			respond500(w, "Create Shift Error", err, false)
-			return
-		}
-		var ok bool
-		if err := db.QueryRow(r.Context(),
-			`SELECT EXISTS (SELECT 1 FROM departments WHERE id = $1 AND location_id = $2)`,
-			body.DepartmentID, locID).Scan(&ok); err != nil || !ok {
-			respond(w, http.StatusForbidden, msg("Department not in your location"))
-			return
+		if currentUser(r).Role == "scheduler" {
+			deptID, err := schedulerDepartmentID(r.Context(), currentUser(r).ID)
+			if err != nil {
+				respond500(w, "Create Shift Error", err, false)
+				return
+			}
+			if body.DepartmentID != deptID {
+				respond(w, http.StatusForbidden, msg("Department not in your department"))
+				return
+			}
+		} else {
+			locID, err := managerLocationID(r.Context(), currentUser(r).ID)
+			if err != nil {
+				respond500(w, "Create Shift Error", err, false)
+				return
+			}
+			var ok bool
+			if err := db.QueryRow(r.Context(),
+				`SELECT EXISTS (SELECT 1 FROM departments WHERE id = $1 AND location_id = $2)`,
+				body.DepartmentID, locID).Scan(&ok); err != nil || !ok {
+				respond(w, http.StatusForbidden, msg("Department not in your location"))
+				return
+			}
 		}
 	}
 	if _, err := db.Exec(r.Context(), `
@@ -1021,13 +1092,23 @@ func staffWorkqueue(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN users u ON u.id = w.assigned_user_id`
 	args := []any{}
 	if !hasRole(u.Role, "admin") {
-		locID, err := managerLocationID(r.Context(), u.ID)
-		if err != nil {
-			respond500(w, "List Workqueue Error", err, false)
-			return
+		if u.Role == "scheduler" {
+			deptID, err := schedulerDepartmentID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "List Workqueue Error", err, false)
+				return
+			}
+			query += ` WHERE w.department_id = $1`
+			args = append(args, deptID)
+		} else {
+			locID, err := managerLocationID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "List Workqueue Error", err, false)
+				return
+			}
+			query += ` WHERE d.location_id = $1`
+			args = append(args, locID)
 		}
-		query += ` WHERE d.location_id = $1`
-		args = append(args, locID)
 	}
 	query += ` ORDER BY w.date, w.start_time`
 	rows, err := db.Query(r.Context(), query, args...)
@@ -1065,23 +1146,42 @@ func assignWorkqueueShift(w http.ResponseWriter, r *http.Request) {
 	decodeJSON(r, &body)
 	shiftID := targetID(r)
 
-	// The shift must be in the caller's location (non-admin).
+	// The shift must be in the caller's scope (non-admin).
 	if !hasRole(u.Role, "admin") {
-		locID, err := managerLocationID(r.Context(), u.ID)
-		if err != nil {
-			respond500(w, "Assign Shift Error", err, false)
-			return
-		}
-		var ok bool
-		if err := db.QueryRow(r.Context(),
-			`SELECT EXISTS (SELECT 1 FROM workqueue w JOIN departments d ON d.id = w.department_id WHERE w.id = $1 AND d.location_id = $2)`,
-			shiftID, locID).Scan(&ok); err != nil {
-			respond500(w, "Assign Shift Error", err, false)
-			return
-		}
-		if !ok {
-			respond(w, http.StatusForbidden, msg("Shift not in your location"))
-			return
+		if u.Role == "scheduler" {
+			deptID, err := schedulerDepartmentID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "Assign Shift Error", err, false)
+				return
+			}
+			var ok bool
+			if err := db.QueryRow(r.Context(),
+				`SELECT EXISTS (SELECT 1 FROM workqueue WHERE id = $1 AND department_id = $2)`,
+				shiftID, deptID).Scan(&ok); err != nil {
+				respond500(w, "Assign Shift Error", err, false)
+				return
+			}
+			if !ok {
+				respond(w, http.StatusForbidden, msg("Shift not in your department"))
+				return
+			}
+		} else {
+			locID, err := managerLocationID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "Assign Shift Error", err, false)
+				return
+			}
+			var ok bool
+			if err := db.QueryRow(r.Context(),
+				`SELECT EXISTS (SELECT 1 FROM workqueue w JOIN departments d ON d.id = w.department_id WHERE w.id = $1 AND d.location_id = $2)`,
+				shiftID, locID).Scan(&ok); err != nil {
+				respond500(w, "Assign Shift Error", err, false)
+				return
+			}
+			if !ok {
+				respond(w, http.StatusForbidden, msg("Shift not in your location"))
+				return
+			}
 		}
 	}
 
@@ -1101,26 +1201,47 @@ func assignWorkqueueShift(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Target must be a real worker (student) — and, for non-admins, one with a
-	// job in the caller's location.
+	// job in the caller's scope.
 	if !hasRole(u.Role, "admin") {
-		locID, err := managerLocationID(r.Context(), u.ID)
-		if err != nil {
-			respond500(w, "Assign Shift Error", err, false)
-			return
-		}
-		var ok bool
-		if err := db.QueryRow(r.Context(), `
-			SELECT EXISTS (
-				SELECT 1 FROM student_jobs sj
-				JOIN jobs j ON j.id = sj.job_id
-				JOIN departments d ON d.id = j.department_id
-				WHERE sj.user_id = $1 AND sj.active AND d.location_id = $2)`, body.UserID, locID).Scan(&ok); err != nil {
-			respond500(w, "Assign Shift Error", err, false)
-			return
-		}
-		if !ok {
-			respond(w, http.StatusForbidden, msg("Worker does not work in your location"))
-			return
+		if u.Role == "scheduler" {
+			deptID, err := schedulerDepartmentID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "Assign Shift Error", err, false)
+				return
+			}
+			var ok bool
+			if err := db.QueryRow(r.Context(), `
+				SELECT EXISTS (
+					SELECT 1 FROM student_jobs sj
+					JOIN jobs j ON j.id = sj.job_id
+					WHERE sj.user_id = $1 AND sj.active AND j.department_id = $2)`, body.UserID, deptID).Scan(&ok); err != nil {
+				respond500(w, "Assign Shift Error", err, false)
+				return
+			}
+			if !ok {
+				respond(w, http.StatusForbidden, msg("Worker does not work in your department"))
+				return
+			}
+		} else {
+			locID, err := managerLocationID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "Assign Shift Error", err, false)
+				return
+			}
+			var ok bool
+			if err := db.QueryRow(r.Context(), `
+				SELECT EXISTS (
+					SELECT 1 FROM student_jobs sj
+					JOIN jobs j ON j.id = sj.job_id
+					JOIN departments d ON d.id = j.department_id
+					WHERE sj.user_id = $1 AND sj.active AND d.location_id = $2)`, body.UserID, locID).Scan(&ok); err != nil {
+				respond500(w, "Assign Shift Error", err, false)
+				return
+			}
+			if !ok {
+				respond(w, http.StatusForbidden, msg("Worker does not work in your location"))
+				return
+			}
 		}
 	} else {
 		var ok bool
@@ -1193,13 +1314,23 @@ func listRequests(w http.ResponseWriter, r *http.Request) {
 		WHERE r.status = 'pending'`
 	args := []any{}
 	if !hasRole(u.Role, "admin") {
-		locID, err := managerLocationID(r.Context(), u.ID)
-		if err != nil {
-			respond500(w, "List Requests Error", err, false)
-			return
+		if u.Role == "scheduler" {
+			deptID, err := schedulerDepartmentID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "List Requests Error", err, false)
+				return
+			}
+			query += ` AND w.department_id = $1`
+			args = append(args, deptID)
+		} else {
+			locID, err := managerLocationID(r.Context(), u.ID)
+			if err != nil {
+				respond500(w, "List Requests Error", err, false)
+				return
+			}
+			query += ` AND d.location_id = $1`
+			args = append(args, locID)
 		}
-		query += ` AND d.location_id = $1`
-		args = append(args, locID)
 	}
 	query += ` ORDER BY r.created_at`
 	rows, err := db.Query(r.Context(), query, args...)

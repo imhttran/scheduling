@@ -25,21 +25,48 @@ endpoints" (clean working tree, nothing pending). Changes:
 - **`backend/schedule.go`** — `workerCalendar` and `workerPreferences`:
   read-only, location-scoped the same way (IDOR-safe, matches the pattern
   used by every other manager-scoped handler in the file).
-- **`backend/seed.go`** — `seedStaffConversions`: dev-only (`cfg.Env ==
-"development"` guard, same convention as every other seeder), converts 4
-  seeded students into staff so the staff screen has variety.
-- **`backend/seed.go`** — `seedAssignments`: dev-only, fills ~80% of the
-  workqueue (leaving ~20% open for new data) while respecting each worker's
+- **`backend/seed.go`** — `seedExtraData`: dev-only, reads `jobs.csv` (extra
+  jobs) and `staff.csv` (full-time staff) on top of the one-per-department
+  defaults. Replaces the old `seedJobs` + `seedFulltimeStaff` functions.
+- **`backend/seed.go`** — `seedAssignments`: dev-only, fills ~90% of the
+  workqueue (leaving ~10% open for new data) while respecting each worker's
   weekly cap (`worker_type`). The pure planner `planAssignments` is unit-tested
   in `backend/seed_test.go`.
-- **`backend/main.go`** — wires `seedStaffConversions` and `seedAssignments`
-  into the seed sequence (conversions run before assignments so converted staff
-  use their real caps).
+- **`backend/seed.csv`** — now carries `worker_type`/`hourly_limit` columns, so
+  the four full-time/hourly staff are created as staff directly (the old
+  `seedStaffConversions` post-hoc conversion is gone).
+- **`backend/main.go`** — wires `seedExtraData` and `seedAssignments` into the
+  seed sequence.
 - **`frontend/app/manager/page.tsx`** — "Add Worker" modal (posts to
   `/api/workers`); worker Edit modal now also shows this-week's calendar and
   preferred times (loaded on open via the two new GET endpoints); the
   shift-assignment dropdown now filters out students who'd exceed their
   weekly hour cap (`hoursBetween` helper) instead of listing everyone.
+
+## Scheduler Department Scoping
+
+Schedulers are now scoped to a single department (not just a location): one
+scheduler is seeded per department, and each only sees/manages that
+department's schedule.
+
+- **`backend/migrations/008_scheduler_assignments.sql`** — new
+  `scheduler_assignments (user_id, department_id)` table; embedded and applied
+  as migration 8 in `main.go`.
+- **`backend/seed.csv`** — 6 schedulers, one per department (dining, facility,
+  residential life, business service, marketing, communication).
+- **`backend/seed.go`** — `seedFromCSV` inserts a `scheduler_assignments` row
+  for scheduler rows (in addition to the location assignment).
+- **`backend/schedule.go`** — `schedulerDepartmentID` helper; schedulers are
+  department-scoped (managers stay location-scoped, admins exempt) across
+  `staffWorkqueue`, `assignWorkqueueShift`, `createWorkqueueShift`,
+  `listRequests`, `approveRequest`/`denyRequest` (via `requestInCallerLocation`),
+  `listDepartments`, and `listStudents`.
+- **`frontend/app/manager/page.tsx`** — workqueue hint reads "All slots in your
+  department" for schedulers.
+- **`backend/app_test.go`** — `ensureTestSchema` now applies all migrations
+  (1–8); `loginAs` completes the 2FA flow (dev code `1234`) so integration
+  tests run against a fresh DB; `TestSchedulerDepartmentScoping` verifies a
+  scheduler only sees/assigns shifts in their department.
 
 ## What Worked
 

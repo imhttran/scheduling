@@ -1,0 +1,29 @@
+email,first,last,job,department,location,worker_type
+security-jester@mail.edu,Sasha,Stone,Security Guard,Facilities - Jester,Jester,fulltime
+security-jester2@mail.edu,Marcus,Reed,Security Guard,Facilities - Jester,Jester,fulltime
+security-jester3@mail.edu,Priya,Nair,Security Guard,Facilities - Jester,Jester,fulltime
+security-jester4@mail.edu,Diego,Ramos,Security Guard,Facilities - Jester,Jester,fulltime
+security-jester5@mail.edu,Elena,Kovac,Security Guard,Facilities - Jester,Jester,fulltime
+facility-jester@mail.edu,Blake,Brooks,Facility Manager,Facilities - Jester,Jester,fulltime
+maintenance-jester@mail.edu,Morgan,Mills,Maintenance Technician,Facilities - Jester,Jester,fulltime
+security-kinsolving@mail.edu,Sasha,Stone,Security Guard,Facilities - Kin Solving,Kin Solving,fulltime
+security-kinsolving2@mail.edu,Marcus,Reed,Security Guard,Facilities - Kin Solving,Kin Solving,fulltime
+security-kinsolving3@mail.edu,Priya,Nair,Security Guard,Facilities - Kin Solving,Kin Solving,fulltime
+security-kinsolving4@mail.edu,Diego,Ramos,Security Guard,Facilities - Kin Solving,Kin Solving,fulltime
+security-kinsolving5@mail.edu,Elena,Kovac,Security Guard,Facilities - Kin Solving,Kin Solving,fulltime
+facility-kinsolving@mail.edu,Blake,Brooks,Facility Manager,Facilities - Kin Solving,Kin Solving,fulltime
+maintenance-kinsolving@mail.edu,Morgan,Mills,Maintenance Technician,Facilities - Kin Solving,Kin Solving,fulltime
+security-littlefield@mail.edu,Sasha,Stone,Security Guard,Facilities - Little Field,Little Field,fulltime
+security-littlefield2@mail.edu,Marcus,Reed,Security Guard,Facilities - Little Field,Little Field,fulltime
+security-littlefield3@mail.edu,Priya,Nair,Security Guard,Facilities - Little Field,Little Field,fulltime
+security-littlefield4@mail.edu,Diego,Ramos,Security Guard,Facilities - Little Field,Little Field,fulltime
+security-littlefield5@mail.edu,Elena,Kovac,Security Guard,Facilities - Little Field,Little Field,fulltime
+facility-littlefield@mail.edu,Blake,Brooks,Facility Manager,Facilities - Little Field,Little Field,fulltime
+maintenance-littlefield@mail.edu,Morgan,Mills,Maintenance Technician,Facilities - Little Field,Little Field,fulltime
+security-pationcafe@mail.edu,Sasha,Stone,Security Guard,Facilities - Pation Cafe,Pation Cafe,fulltime
+security-pationcafe2@mail.edu,Marcus,Reed,Security Guard,Facilities - Pation Cafe,Pation Cafe,fulltime
+security-pationcafe3@mail.edu,Priya,Nair,Security Guard,Facilities - Pation Cafe,Pation Cafe,fulltime
+security-pationcafe4@mail.edu,Diego,Ramos,Security Guard,Facilities - Pation Cafe,Pation Cafe,fulltime
+security-pationcafe5@mail.edu,Elena,Kovac,Security Guard,Facilities - Pation Cafe,Pation Cafe,fulltime
+facility-pationcafe@mail.edu,Blake,Brooks,Facility Manager,Facilities - Pation Cafe,Pation Cafe,fulltime
+maintenance-pationcafe@mail.edu,Morgan,Mills,Maintenance Technician,Facilities - Pation Cafe,Pation Cafe,fulltime

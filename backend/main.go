@@ -31,6 +31,15 @@ var jobDefaultSchedulesSQL string
 //go:embed migrations/007_weekday_work_hours.sql
 var weekdayWorkHoursSQL string
 
+//go:embed migrations/008_scheduler_assignments.sql
+var schedulerAssignmentsSQL string
+
+//go:embed migrations/009_security_24h.sql
+var security24hSQL string
+
+//go:embed migrations/010_workqueue_job.sql
+var workqueueJobSQL string
+
 func main() {
 	loadEnvFiles()
 	loadConfig()
@@ -46,11 +55,14 @@ func main() {
 	migrate(ctx)
 	seedDevAdmin(ctx)
 	seedFromCSV(ctx)
+	seedExtraData(ctx)
+	seedSecuritySchedules(ctx)
 	seedWorkqueue(ctx)
 	seedStudentAvailability(ctx)
 	seedStaff(ctx)
-	seedStaffConversions(ctx)
+	seedJobOptimalWorkers(ctx)
 	seedAssignments(ctx)
+	seedSecurityAssignments(ctx)
 	seedRequests(ctx)
 	seedJobHolidays(ctx)
 	seedWeeklySchedules(ctx)
@@ -83,6 +95,9 @@ func migrate(ctx context.Context) {
 		{5, workerHoursSQL},
 		{6, jobDefaultSchedulesSQL},
 		{7, weekdayWorkHoursSQL},
+		{8, schedulerAssignmentsSQL},
+		{9, security24hSQL},
+		{10, workqueueJobSQL},
 	} {
 		var applied bool
 		if err := db.QueryRow(ctx,
