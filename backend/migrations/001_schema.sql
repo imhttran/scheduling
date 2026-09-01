@@ -156,3 +156,142 @@ CREATE TABLE IF NOT EXISTS schedule_requests (
   reason       TEXT,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+
+-- Job concept: a position a worker/student is qualified to do. A job belongs
+-- to a department (the type of work); its location is the department's. A
+-- student can hold multiple jobs (student_jobs), possibly in different
+-- departments/locations. Replaces the single-department student_assignments.
+
+CREATE TABLE IF NOT EXISTS jobs (
+  id            SERIAL PRIMARY KEY,
+  name          TEXT NOT NULL,
+  department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+  UNIQUE (name, department_id)
+);
+
+-- A student's qualifications: one row per job they're assigned to.
+CREATE TABLE IF NOT EXISTS student_jobs (
+  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  job_id    INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  min_hours INTEGER NOT NULL DEFAULT 0,
+  max_hours INTEGER NOT NULL DEFAULT 20,
+  active    BOOLEAN NOT NULL DEFAULT true,
+  PRIMARY KEY (user_id, job_id)
+);
+
+-- Backfill: one default job per department (named after it), then migrate each
+-- student's old single-department assignment into a student_jobs row.
+INSERT INTO jobs (name, department_id)
+SELECT name, id FROM departments;
+
+INSERT INTO student_jobs (user_id, job_id, min_hours, max_hours, active)
+SELECT sa.user_id, j.id, sa.min_hours, sa.max_hours, sa.active
+FROM student_assignments sa
+JOIN jobs j ON j.department_id = sa.department_id;
+
+DROP TABLE student_assignments;
+
+
+-- Per-job staffing requirements. A job's operating hours are defined per day of
+-- week (0=Sunday..6=Saturday); a day with no row means the job is closed that
+-- day (weekend, holiday, etc.). The daily hour requirement is the span between
+-- start_time and end_time; the weekly requirement is the sum across days.
+
+ALTER TABLE jobs ADD COLUMN IF NOT EXISTS optimal_workers INTEGER NOT NULL DEFAULT 1;
+
+-- A job's daily operating hours. One row per day the job is open.
+CREATE TABLE IF NOT EXISTS job_schedules (
+  id          SERIAL PRIMARY KEY,
+  job_id      INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+  start_time  TIME NOT NULL,
+  end_time    TIME NOT NULL,
+  UNIQUE (job_id, day_of_week)
+);
+
+
+-- Date-specific closures: a job closed on a particular calendar date, overriding
+-- its weekly schedule (holidays, planned closings, etc.). The weekly hour
+-- requirement is reduced by the hours of any holiday that falls on a day the
+-- job would otherwise be open.
+
+CREATE TABLE IF NOT EXISTS job_holidays (
+  id     SERIAL PRIMARY KEY,
+  job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  date   DATE NOT NULL,
+  reason TEXT,
+  UNIQUE (job_id, date)
+);
+
+
+-- How a worker's weekly hours are governed. Anyone can be a worker: students
+-- are capped at 20 hrs/wk across all jobs/departments; staff are classified
+-- fulltime (40 regular + up to 20 overtime) or hourly (regular limit set by a
+-- manager, default 40; overtime is anything over 40).
+--
+-- worker_type: 'student' | 'fulltime' | 'hourly' (default 'student').
+-- hourly_limit: manager-set regular weekly hours for an 'hourly' worker
+--   (1..40, where 40 is the default). NULL means use the 40 default.
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS worker_type TEXT NOT NULL DEFAULT 'student';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS hourly_limit INTEGER;
+
+
+-- Backfill default operating hours for jobs that have none: weekdays 9am-5pm
+-- (8h each, 40h/wk) and weekends 10h each (20h/wk). Only touches jobs with no
+-- existing job_schedules rows, so it's safe to re-run.
+INSERT INTO job_schedules (job_id, day_of_week, start_time, end_time)
+SELECT j.id, d.dow, d.start_time, d.end_time
+FROM jobs j
+CROSS JOIN (VALUES
+  (1, '09:00'::time, '17:00'::time),
+  (2, '09:00'::time, '17:00'::time),
+  (3, '09:00'::time, '17:00'::time),
+  (4, '09:00'::time, '17:00'::time),
+  (5, '09:00'::time, '17:00'::time),
+  (6, '10:00'::time, '20:00'::time),
+  (0, '10:00'::time, '20:00'::time)
+) AS d(dow, start_time, end_time)
+WHERE NOT EXISTS (SELECT 1 FROM job_schedules js WHERE js.job_id = j.id);
+
+
+-- Update weekday operating hours from the old 8am-4pm default to normal work
+-- hours (9am-5pm). Only touches rows still on the old default, so manually
+-- configured schedules are left alone. Idempotent.
+UPDATE job_schedules
+SET start_time = '09:00', end_time = '17:00'
+WHERE day_of_week BETWEEN 1 AND 5
+  AND start_time = '08:00' AND end_time = '16:00';
+
+
+-- Scheduler-to-department scoping: a scheduler manages the schedule for one
+-- department (and, by extension, its location).
+CREATE TABLE IF NOT EXISTS scheduler_assignments (
+  user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE
+);
+
+
+-- Allow a job to have multiple shifts per day. 24h security coverage needs
+-- three 8h shifts (00:00-08:00, 08:00-16:00, 16:00-24:00) on every day, which
+-- the old UNIQUE (job_id, day_of_week) constraint forbade.
+ALTER TABLE job_schedules DROP CONSTRAINT job_schedules_job_id_day_of_week_key;
+ALTER TABLE job_schedules ADD CONSTRAINT job_schedules_job_id_day_of_week_start_time_key
+  UNIQUE (job_id, day_of_week, start_time);
+
+
+-- Track which job a workqueue shift belongs to. The workqueue was department-
+-- scoped, so a security shift and a maintenance shift in the same department
+-- were indistinguishable and could be assigned to the wrong worker. With job_id
+-- the seed (and schedulers) can match shifts to the workers qualified for them.
+ALTER TABLE workqueue ADD COLUMN job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL;
+
+
+-- Group workqueue rows that were split from one original shift. When a shift is
+-- split into assigned blocks + open remainders, every row keeps a reference to
+-- the original shift id so the scheduler calendar can reconstruct the full shift
+-- and show which 2-hour slots are already taken.
+ALTER TABLE workqueue ADD COLUMN parent_shift_id INTEGER REFERENCES workqueue(id) ON DELETE SET NULL;
+
+

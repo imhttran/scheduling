@@ -10,38 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-//go:embed migrations/001_init.sql
+//go:embed migrations/001_schema.sql
 var schemaSQL string
-
-//go:embed migrations/002_jobs.sql
-var jobsSQL string
-
-//go:embed migrations/003_job_requirements.sql
-var jobRequirementsSQL string
-
-//go:embed migrations/004_job_holidays.sql
-var jobHolidaysSQL string
-
-//go:embed migrations/005_worker_hours.sql
-var workerHoursSQL string
-
-//go:embed migrations/006_job_default_schedules.sql
-var jobDefaultSchedulesSQL string
-
-//go:embed migrations/007_weekday_work_hours.sql
-var weekdayWorkHoursSQL string
-
-//go:embed migrations/008_scheduler_assignments.sql
-var schedulerAssignmentsSQL string
-
-//go:embed migrations/009_security_24h.sql
-var security24hSQL string
-
-//go:embed migrations/010_workqueue_job.sql
-var workqueueJobSQL string
-
-//go:embed migrations/011_workqueue_parent.sql
-var workqueueParentSQL string
 
 func main() {
 	loadEnvFiles()
@@ -92,16 +62,6 @@ func migrate(ctx context.Context) {
 		sql     string
 	}{
 		{1, schemaSQL},
-		{2, jobsSQL},
-		{3, jobRequirementsSQL},
-		{4, jobHolidaysSQL},
-		{5, workerHoursSQL},
-		{6, jobDefaultSchedulesSQL},
-		{7, weekdayWorkHoursSQL},
-		{8, schedulerAssignmentsSQL},
-		{9, security24hSQL},
-		{10, workqueueJobSQL},
-		{11, workqueueParentSQL},
 	} {
 		var applied bool
 		if err := db.QueryRow(ctx,

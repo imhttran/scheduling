@@ -57,14 +57,6 @@ func ensureTestSchema(pool *pgxpool.Pool) {
 		sql     string
 	}{
 		{1, schemaSQL},
-		{2, jobsSQL},
-		{3, jobRequirementsSQL},
-		{4, jobHolidaysSQL},
-		{5, workerHoursSQL},
-		{6, jobDefaultSchedulesSQL},
-		{7, weekdayWorkHoursSQL},
-		{8, schedulerAssignmentsSQL},
-		{11, workqueueParentSQL},
 	}
 	for _, m := range migrations {
 		var applied bool
