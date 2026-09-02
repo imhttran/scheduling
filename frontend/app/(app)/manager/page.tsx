@@ -12,7 +12,14 @@ import { fmtTime } from "@/components/WeekCalendar";
 import { hasAnyRole, hasRole } from "@/lib/roles";
 import { useSortablePage } from "@/lib/pagination";
 import { DataGrid, type Column } from "@/components/DataGrid";
-import type { Job, Preference, Request, Shift, Team } from "@/lib/types";
+import type {
+  Job,
+  OrgDepartment,
+  Preference,
+  Request,
+  Shift,
+  Team,
+} from "@/lib/types";
 
 type WorkerJob = {
   jobId: number;
@@ -45,6 +52,10 @@ const hoursBetween = (start: string, end: string) => {
   return (eh * 60 + em - (sh * 60 + sm)) / 60;
 };
 
+// Org chart node label: profile name when set, else the email.
+const managerLabel = (email?: string | null, name?: string | null) =>
+  name || email || "No manager assigned";
+
 export default function ManagerPage() {
   const [token, setToken] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -54,6 +65,7 @@ export default function ManagerPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [org, setOrg] = useState<OrgDepartment[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
   const [workerEditModal, setWorkerEditModal] = useState<Worker | null>(null);
   const [jobModal, setJobModal] = useState<Job | null>(null);
@@ -246,7 +258,7 @@ export default function ManagerPage() {
   ];
 
   const load = useCallback(async (authToken: string) => {
-    const [w, j, sh, t, r] = await Promise.all([
+    const [w, j, sh, t, r, o] = await Promise.all([
       callApi<{ workers: Worker[] }>(
         authToken,
         "/api/workers",
@@ -276,12 +288,20 @@ export default function ManagerPage() {
         undefined,
         false,
       ),
+      callApi<{ org: OrgDepartment[] }>(
+        authToken,
+        "/api/org",
+        "GET",
+        undefined,
+        false,
+      ),
     ]);
     if (w) setWorkers(w.workers ?? []);
     if (j) setJobs(j.jobs ?? []);
     if (sh) setShifts(sh.shifts ?? []);
     if (t) setTeams(t.teams ?? []);
     if (r) setRequests(r.requests ?? []);
+    if (o) setOrg(o.org ?? []);
   }, []);
 
   useEffect(() => {
@@ -480,6 +500,7 @@ export default function ManagerPage() {
       <div className="with-sidebar">
         <nav className="sidebar">
           <a href="/calendar">Calendar view</a>
+          <a href="#orgchart">Org Chart</a>
           <a href="#workers">Workers</a>
           <a href="#jobs">Job Requirements</a>
           <a href="#workqueue">Workqueue</a>
@@ -490,6 +511,57 @@ export default function ManagerPage() {
           </a>
         </nav>
         <div className="dashboard-card">
+          <div className="user-list-section" id="orgchart">
+            <h2>Org Chart</h2>
+            <p className="section-hint">
+              Departments and teams in your scope, with the manager responsible
+              for each and the workers on every team.
+            </p>
+            {org.length === 0 ? (
+              <p className="section-hint">No departments in your scope yet.</p>
+            ) : (
+              <div className="org-chart">
+                {org.map((dept) => (
+                  <div className="org-dept" key={dept.id}>
+                    <div className="org-node org-dept-node">
+                      <div className="org-name">{dept.name}</div>
+                      <div className="org-role">Department</div>
+                      <div className="org-manager">
+                        {managerLabel(dept.managerEmail, dept.managerName)}
+                        {dept.managerEmail === email && (
+                          <span className="org-you">You</span>
+                        )}
+                      </div>
+                    </div>
+                    {dept.teams.length > 0 && (
+                      <div className="org-teams">
+                        {dept.teams.map((team) => (
+                          <div className="org-node org-team-node" key={team.id}>
+                            <div className="org-name">{team.name}</div>
+                            <div className="org-role">Team</div>
+                            <div className="org-manager">
+                              {managerLabel(
+                                team.managerEmail,
+                                team.managerName,
+                              )}
+                              {team.managerEmail === email && (
+                                <span className="org-you">You</span>
+                              )}
+                            </div>
+                            <div className="org-count">
+                              {team.workerCount} worker
+                              {team.workerCount === 1 ? "" : "s"}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="user-list-section" id="workers">
             <div className="section-title-row">
               <h2>Workers</h2>

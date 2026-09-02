@@ -205,6 +205,7 @@ func newRouter() http.Handler {
 			r.With(requireRole("admin")).Post("/departments", createDepartment)
 			r.With(requireRole("admin"), parseID).Patch("/departments/{id}", updateDepartment)
 			r.With(requireRole("manager")).Get("/teams", listTeams)
+			r.With(requireRole("manager")).Get("/org", listOrg)
 			r.With(requireRole("manager"), requireDepartmentScope).Post("/teams", createTeam)
 			r.With(requireRole("manager"), requireDepartmentScope, parseID).Patch("/teams/{id}", updateTeam)
 			r.With(requireRole("manager")).Get("/jobs", listJobs)

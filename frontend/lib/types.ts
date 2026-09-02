@@ -83,6 +83,26 @@ export type Team = {
   departmentName: string;
 };
 
+// Org chart: a department with its manager, and the teams under it with
+// theirs. Managers see their scope; admins see the whole org.
+export type OrgTeam = {
+  id: number;
+  name: string;
+  managerId?: number | null;
+  managerEmail?: string | null;
+  managerName?: string | null;
+  workerCount: number;
+};
+
+export type OrgDepartment = {
+  id: number;
+  name: string;
+  managerId?: number | null;
+  managerEmail?: string | null;
+  managerName?: string | null;
+  teams: OrgTeam[];
+};
+
 export type AuditEntry = {
   id: number;
   actorId?: number | null;
