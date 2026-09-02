@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Radiant tree">
+  <!-- Canopy: five rays fanning up from the horizon, like the reference starburst -->
+  <g class="c" stroke="currentColor" stroke-width="8" fill="none">
+    <path d="M48 52 L48 10" />
+    <path d="M48 52 L31 16" />
+    <path d="M48 52 L65 16" />
+    <path d="M48 52 L14 26" />
+    <path d="M48 52 L82 26" />
+  </g>
+  <!-- Ground band + trunk dropping below, like the reference mark -->
+  <g class="t" fill="currentColor">
+    <rect x="8" y="48" width="80" height="8" />
+    <rect x="44" y="50" width="8" height="36" />
+  </g>
+</svg>

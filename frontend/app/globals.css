@@ -50,6 +50,21 @@
         #9fb8c9 60%,
         #061729 100%
     );
+
+    /* Brand mark — HTT Tiers, duet colorway */
+    --logo-canopy: var(--orange-500);
+    --logo-base: var(--navy-900);
+
+    /* Campus oaks photo + a semi-transparent brand wash that keeps text
+       legible while letting the photo ghost through */
+    --photo: url("/oaks.jpg");
+    --bg-gradient: linear-gradient(
+        180deg,
+        rgba(250, 250, 247, 0.9) 0%,
+        rgba(238, 243, 246, 0.84) 35%,
+        rgba(173, 196, 212, 0.78) 60%,
+        rgba(27, 66, 96, 0.85) 100%
+    );
 }
 
 /* Dark variant — same navy/orange brand, navy surfaces instead of white. */
@@ -73,10 +88,14 @@
             0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -8px rgba(0, 0, 0, 0.6);
         --bg-gradient: linear-gradient(
             180deg,
-            #0b2030 0%,
-            #061729 45%,
-            #000a14 100%
+            rgba(15, 40, 60, 0.88) 0%,
+            rgba(12, 32, 52, 0.9) 45%,
+            rgba(6, 20, 36, 0.92) 100%
         );
+
+        /* Brand mark on navy surfaces: keep the orange, lighten the base */
+        --logo-canopy: var(--orange-500);
+        --logo-base: #eef3f6;
     }
 }
 
@@ -90,8 +109,11 @@ body {
     font-family:
         -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
         sans-serif;
-    background: var(--bg-gradient);
-    background-attachment: fixed;
+    background-image: var(--bg-gradient), var(--photo);
+    background-repeat: no-repeat, no-repeat;
+    background-attachment: fixed, fixed;
+    background-position: center, center;
+    background-size: cover, cover;
     color: var(--text-color);
     display: flex;
     align-items: center;
@@ -124,6 +146,25 @@ body {
 .login-form p {
     color: var(--text-muted);
     margin-bottom: 2rem;
+}
+
+/* Brand mark centered above the auth card */
+.login-logo {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1.25rem;
+}
+
+.logo {
+    display: block;
+}
+
+.logo .logo-canopy {
+    color: var(--logo-canopy);
+}
+
+.logo .logo-base {
+    color: var(--logo-base);
 }
 
 .input-group {
@@ -252,6 +293,12 @@ body {
     font-weight: 700;
 }
 
+.page-header-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 .page-header p {
     margin-top: 4px;
     color: var(--text-muted);
@@ -302,6 +349,9 @@ body {
 
 .page-footer .footer-version {
     margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .dashboard-container {

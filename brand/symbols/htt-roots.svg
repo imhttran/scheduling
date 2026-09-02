@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 128" role="img" aria-label="HTT roots tree">
+  <!-- Approved chevron pine with the initials as block-letter roots below the band -->
+  <g class="c" fill="currentColor">
+    <path d="M48 12 L32 23.2 L32 30.2 L48 19 L64 30.2 L64 23.2 Z" />
+    <path d="M48 26 L20 45.6 L20 52.6 L48 33 L76 52.6 L76 45.6 Z" />
+    <path d="M48 40 L8 68 L8 75 L48 47 L88 75 L88 68 Z" />
+  </g>
+  <g class="t" fill="currentColor">
+    <rect x="44.5" y="44" width="7" height="30" />
+    <rect x="8" y="74" width="80" height="7" />
+    <!-- HTT block-letter roots -->
+    <rect x="16" y="92" width="5" height="24" />
+    <rect x="27" y="92" width="5" height="24" />
+    <rect x="16" y="101.5" width="16" height="5" />
+    <rect x="38" y="92" width="18" height="5" />
+    <rect x="44.5" y="97" width="5" height="19" />
+    <rect x="62" y="92" width="18" height="5" />
+    <rect x="68.5" y="97" width="5" height="19" />
+  </g>
+</svg>

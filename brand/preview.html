@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Logo concepts — scheduling</title>
+        <style>
+            :root {
+                --orange-500: #bf5700;
+                --orange-100: #f8dcc4;
+                --navy-900: #001020;
+                --navy-700: #0b2030;
+                --navy-300: #5a7e99;
+                --navy-200: #9fb8c9;
+                --navy-100: #d3e0e8;
+                --paper: #fafaf7;
+                --border: #e3e0da;
+            }
+            * {
+                box-sizing: border-box;
+                margin: 0;
+            }
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    sans-serif;
+                background: var(--paper);
+                color: var(--navy-900);
+                padding: 40px 48px 80px;
+            }
+            h1 {
+                font-size: 22px;
+                margin-bottom: 4px;
+            }
+            .sub {
+                color: var(--navy-300);
+                font-size: 13px;
+                margin-bottom: 36px;
+            }
+            h2 {
+                font-size: 14px;
+                font-weight: 600;
+                letter-spacing: 0.02em;
+                margin: 34px 0 6px;
+            }
+            .desc {
+                font-size: 12px;
+                color: var(--navy-300);
+                margin-bottom: 12px;
+            }
+
+            .row {
+                display: flex;
+                gap: 28px;
+                align-items: flex-end;
+                flex-wrap: wrap;
+            }
+            .cell {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            .tile {
+                width: 168px;
+                height: 168px;
+                border-radius: 26px;
+                display: grid;
+                place-items: center;
+                color: var(--sym);
+                background: var(--bg);
+            }
+            .tile svg {
+                width: 72%;
+                height: 72%;
+                display: block;
+            }
+            .label {
+                font-size: 11px;
+                color: var(--navy-300);
+                font-family: ui-monospace, monospace;
+            }
+
+            .minis {
+                display: flex;
+                gap: 10px;
+                align-items: flex-end;
+            }
+            .mini {
+                border-radius: 7px;
+                display: grid;
+                place-items: center;
+                color: var(--sym);
+                background: var(--bg);
+            }
+            .mini svg {
+                display: block;
+            }
+            .m40 {
+                width: 40px;
+                height: 40px;
+            }
+            .m40 svg {
+                width: 72%;
+                height: 72%;
+            }
+            .m24 {
+                width: 24px;
+                height: 24px;
+            }
+            .m24 svg {
+                width: 76%;
+                height: 76%;
+            }
+            .m16 {
+                width: 16px;
+                height: 16px;
+            }
+            .m16 svg {
+                width: 76%;
+                height: 76%;
+            }
+
+            /* Colorways */
+            .cw-orange {
+                --bg: var(--orange-500);
+                --sym: #ffffff;
+            }
+            .cw-navy {
+                --bg: var(--navy-900);
+                --sym: #ffffff;
+            }
+            .cw-paper {
+                --bg: var(--paper);
+                --sym: var(--navy-900);
+            }
+            .cw-duet {
+                --bg: #ffffff;
+                --sym: var(--orange-500);
+            }
+            .cw-duet .c {
+                color: var(--orange-500);
+            }
+            .cw-duet .t {
+                color: var(--navy-900);
+            }
+
+            /* Dark-section variants: symbol-only, no tile */
+            .dark {
+                background: var(--navy-900);
+                margin: 40px -48px -80px;
+                padding: 28px 48px 80px;
+            }
+            .dark h2 {
+                color: var(--navy-100);
+            }
+            .dark .desc {
+                color: var(--navy-300);
+            }
+            .bare {
+                width: 168px;
+                height: 168px;
+                display: grid;
+                place-items: center;
+                color: #ffffff;
+            }
+            .bare svg {
+                width: 76%;
+                height: 76%;
+            }
+            .bare.o {
+                color: var(--orange-500);
+            }
+            .bare.o .t {
+                color: #ffffff;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Tree logo concepts</h1>
+        <p class="sub">
+            Same visual language as Better Place Forests — geometric, bold,
+            radiating, horizon band — recut as a tree, in the UT navy/orange
+            palette from <code>globals.css</code>.
+        </p>
+        <div id="grid"></div>
+
+        <script>
+            const SYMBOLS = {
+                httTiers: `<svg viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+            <g class="c" fill="currentColor">
+              <rect x="28" y="10" width="7" height="24"/><rect x="61" y="10" width="7" height="24"/>
+              <rect x="28" y="18.5" width="40" height="7"/>
+              <rect x="16" y="40" width="64" height="7"/><rect x="44.5" y="47" width="7" height="11"/>
+            </g>
+            <g class="t" fill="currentColor">
+              <rect x="8" y="64" width="80" height="7"/><rect x="44.5" y="71" width="7" height="17"/>
+            </g>
+          </svg>`,
+                httRoots: `<svg viewBox="0 0 96 128" xmlns="http://www.w3.org/2000/svg">
+            <g class="c" fill="currentColor">
+              <path d="M48 12 L32 23.2 L32 30.2 L48 19 L64 30.2 L64 23.2 Z"/>
+              <path d="M48 26 L20 45.6 L20 52.6 L48 33 L76 52.6 L76 45.6 Z"/>
+              <path d="M48 40 L8 68 L8 75 L48 47 L88 75 L88 68 Z"/>
+            </g>
+            <g class="t" fill="currentColor">
+              <rect x="44.5" y="44" width="7" height="30"/><rect x="8" y="74" width="80" height="7"/>
+              <rect x="16" y="92" width="5" height="24"/><rect x="27" y="92" width="5" height="24"/>
+              <rect x="16" y="101.5" width="16" height="5"/>
+              <rect x="38" y="92" width="18" height="5"/><rect x="44.5" y="97" width="5" height="19"/>
+              <rect x="62" y="92" width="18" height="5"/><rect x="68.5" y="97" width="5" height="19"/>
+            </g>
+          </svg>`,
+                rays: `<svg viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+  <g class="c" stroke="currentColor" stroke-width="8" fill="none">
+    <path d="M48 52 L48 10"/><path d="M48 52 L31 16"/><path d="M48 52 L65 16"/>
+    <path d="M48 52 L14 26"/><path d="M48 52 L82 26"/>
+  </g>
+  <g class="t" fill="currentColor">
+    <rect x="8" y="48" width="80" height="8"/><rect x="44" y="50" width="8" height="36"/>
+  </g>
+</svg>`,
+                pine: `<svg viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+  <g class="c" fill="currentColor">
+    <path d="M48 14 L32 26 L32 34 L48 22 L64 34 L64 26 Z"/>
+    <path d="M48 29 L20 50 L20 58 L48 37 L76 58 L76 50 Z"/>
+    <path d="M48 44 L8 74 L8 82 L48 52 L88 82 L88 74 Z"/>
+  </g>
+  <g class="t" fill="currentColor">
+    <rect x="44" y="48" width="8" height="38"/><rect x="8" y="84" width="80" height="7"/>
+  </g>
+</svg>`,
+                blocks: `<svg viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+  <g class="c" fill="currentColor">
+    <rect x="39" y="10" width="18" height="18"/><rect x="27" y="34" width="18" height="18"/>
+    <rect x="51" y="34" width="18" height="18"/><rect x="15" y="58" width="18" height="18"/>
+    <rect x="39" y="58" width="18" height="18"/><rect x="63" y="58" width="18" height="18"/>
+  </g>
+  <g class="t" fill="currentColor"><rect x="43" y="76" width="10" height="12"/></g>
+</svg>`,
+                disc: `<svg viewBox="0 0 96 96" xmlns="http://www.w3.org/2000/svg">
+  <g class="c" stroke="currentColor" stroke-width="6.5" fill="none">
+    <path d="M48 60 L48 28"/><path d="M48 60 L33 31.75"/><path d="M48 60 L63 31.75"/>
+    <path d="M48 60 L21.8 41.65"/><path d="M48 60 L74.2 41.65"/>
+    <path d="M20.5 42.6 A32.5 32.5 0 0 1 75.5 42.6"/>
+  </g>
+  <g class="t" fill="currentColor">
+    <rect x="12" y="60" width="72" height="7"/><rect x="44.75" y="67" width="6.5" height="21"/>
+  </g>
+</svg>`,
+            };
+
+            const DESIGNS = [
+                {
+                    key: "httTiers",
+                    name: "A · HTT Tiers",
+                    desc: "NEW — the tree is your initials: H crown → T → T with trunk. Reads HTT top to bottom.",
+                    minis: true,
+                },
+                {
+                    key: "httRoots",
+                    name: "B · HTT Roots",
+                    desc: "NEW — the approved Chevron Pine with HTT block-letter roots below the band. Tall lockup.",
+                    minis: false,
+                },
+                {
+                    key: "pine",
+                    name: "C · Chevron Pine",
+                    desc: "Current pick — three stacked tiers at one consistent angle + trunk + band.",
+                    minis: true,
+                },
+                {
+                    key: "rays",
+                    name: "D · Radiant Tree",
+                    desc: "Closest to the reference: five rays fan up from a horizon band, trunk drops below.",
+                    minis: true,
+                },
+                {
+                    key: "blocks",
+                    name: "E · Shift Blocks",
+                    desc: "Canopy built from stacked square blocks — a nod to calendar shifts.",
+                    minis: true,
+                },
+                {
+                    key: "disc",
+                    name: "F · Radiant Crown",
+                    desc: "Round crown cut into five wedges by negative-space rays; deciduous counterpart to D.",
+                    minis: true,
+                },
+            ];
+            const COLORWAYS = [
+                { cls: "cw-orange", label: "orange-500 #BF5700 / white" },
+                { cls: "cw-navy", label: "navy-900 #001020 / white" },
+                { cls: "cw-paper", label: "paper #FAFAF7 / navy-900" },
+                { cls: "cw-duet", label: "duet: orange canopy / navy trunk" },
+            ];
+
+            const root = document.getElementById("grid");
+            for (const d of DESIGNS) {
+                const sec = document.createElement("section");
+                sec.innerHTML = `<h2>${d.name}</h2><p class="desc">${d.desc}</p>`;
+                const row = document.createElement("div");
+                row.className = "row";
+                for (const c of COLORWAYS) {
+                    const cell = document.createElement("div");
+                    cell.className = "cell";
+                    cell.innerHTML = `<div class="tile ${c.cls}">${SYMBOLS[d.key]}</div><span class="label">${c.label}</span>`;
+                    row.appendChild(cell);
+                }
+                const miniCell = document.createElement("div");
+                miniCell.className = "cell";
+                if (d.minis) {
+                    miniCell.innerHTML = `
+        <div class="minis">
+          <div class="mini m40 cw-orange">${SYMBOLS[d.key]}</div>
+          <div class="mini m24 cw-orange">${SYMBOLS[d.key]}</div>
+          <div class="mini m16 cw-navy">${SYMBOLS[d.key]}</div>
+        </div>
+        <span class="label">40 / 24 / 16 px</span>`;
+                    row.appendChild(miniCell);
+                }
+                sec.appendChild(row);
+                root.appendChild(sec);
+            }
+
+            // Dark-background strip: symbol without a tile
+            const dark = document.createElement("section");
+            dark.className = "dark";
+            dark.innerHTML = `<h2>Symbol on dark surfaces</h2><p class="desc">For dark-mode headers, footers, and the login gradient. White symbol; right-most is the duet (navy canopy / white base).</p>`;
+            const drow = document.createElement("div");
+            drow.className = "row";
+            for (const d of DESIGNS) {
+                const cell = document.createElement("div");
+                cell.className = "cell";
+                cell.innerHTML = `<div class="bare">${SYMBOLS[d.key]}</div><span class="label" style="color:#5a7e99">${d.name.split("· ")[1]}</span>`;
+                drow.appendChild(cell);
+            }
+            const duetCell = document.createElement("div");
+            duetCell.className = "cell";
+            duetCell.innerHTML = `<div class="bare" style="color:#001020"><span style="color:#bf5700"></span>${SYMBOLS.pine.replace('class="c"', 'class="c" style="color:#bf5700"').replace('class="t"', 'class="t" style="color:#ffffff"')}</div><span class="label" style="color:#5a7e99">Duet on navy</span>`;
+            drow.appendChild(duetCell);
+            dark.appendChild(drow);
+            root.appendChild(dark);
+        </script>
+    </body>
+</html>
