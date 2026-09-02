@@ -20,20 +20,20 @@ type jobHolidayInput struct {
 func listJobs(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	query := `
-		SELECT j.id, j.name, j.department_id, d.name, d.location_id, l.name, j.optimal_workers,
+		SELECT j.id, j.name, j.team_id, t.name, t.department_id, d.name, j.optimal_workers,
 		       (SELECT COUNT(*) FROM student_jobs sj WHERE sj.job_id = j.id AND sj.active) AS current_workers
 		FROM jobs j
-		JOIN departments d ON d.id = j.department_id
-		JOIN locations l ON l.id = d.location_id`
+		JOIN teams t ON t.id = j.team_id
+		JOIN departments d ON d.id = t.department_id`
 	args := []any{}
 	if !hasRole(u.Role, "admin") {
-		locID, err := managerLocationID(r.Context(), u.ID)
+		teamIDs, err := callerScopeTeamIDs(r.Context(), u.ID)
 		if err != nil {
 			respond500(w, "List Jobs Error", err, false)
 			return
 		}
-		query += ` WHERE d.location_id = $1`
-		args = append(args, locID)
+		query += ` WHERE t.id = ANY($1)`
+		args = append(args, teamIDs)
 	}
 	query += ` ORDER BY d.name, j.name`
 	rows, err := db.Query(r.Context(), query, args...)
@@ -44,9 +44,9 @@ func listJobs(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	jobs := []map[string]any{}
 	for rows.Next() {
-		var id, deptID, locID, optimalWorkers, currentWorkers int
-		var name, deptName, locName string
-		if err := rows.Scan(&id, &name, &deptID, &deptName, &locID, &locName, &optimalWorkers, &currentWorkers); err != nil {
+		var id, teamID, deptID, optimalWorkers, currentWorkers int
+		var name, teamName, deptName string
+		if err := rows.Scan(&id, &name, &teamID, &teamName, &deptID, &deptName, &optimalWorkers, &currentWorkers); err != nil {
 			respond500(w, "List Jobs Error", err, false)
 			return
 		}
@@ -70,8 +70,8 @@ func listJobs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		jobs = append(jobs, map[string]any{
-			"id": id, "name": name, "departmentId": deptID, "departmentName": deptName,
-			"locationId": locID, "locationName": locName,
+			"id": id, "name": name, "teamId": teamID, "teamName": teamName,
+			"departmentId": deptID, "departmentName": deptName,
 			"optimalWorkers": optimalWorkers, "currentWorkers": currentWorkers,
 			"weeklyHours": templateWeekly - closed, "schedules": schedules, "holidays": holidays,
 		})
@@ -181,14 +181,14 @@ func insertDefaultJobSchedules(ctx context.Context, jobID int) error {
 func createJob(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name           string             `json:"name"`
-		DepartmentID   int                `json:"departmentId"`
+		TeamID         int                `json:"teamId"`
 		OptimalWorkers int                `json:"optimalWorkers"`
 		Schedules      []jobScheduleInput `json:"schedules"`
 		Holidays       []jobHolidayInput  `json:"holidays"`
 	}
 	decodeJSON(r, &body)
-	if body.Name == "" || body.DepartmentID == 0 {
-		respond(w, http.StatusBadRequest, msg("name and departmentId are required"))
+	if body.Name == "" || body.TeamID == 0 {
+		respond(w, http.StatusBadRequest, msg("name and teamId are required"))
 		return
 	}
 	if body.OptimalWorkers < 1 {
@@ -202,17 +202,17 @@ func createJob(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, msg("holidays must be unique YYYY-MM-DD dates"))
 		return
 	}
-	if !deptInCallerLocation(w, r, body.DepartmentID) {
+	if !teamInCallerScope(w, r, body.TeamID) {
 		return
 	}
 	var id int
 	err := db.QueryRow(r.Context(), `
-		INSERT INTO jobs (name, department_id, optimal_workers) VALUES ($1, $2, $3)
+		INSERT INTO jobs (name, team_id, optimal_workers) VALUES ($1, $2, $3)
 		RETURNING id`,
-		body.Name, body.DepartmentID, body.OptimalWorkers).Scan(&id)
+		body.Name, body.TeamID, body.OptimalWorkers).Scan(&id)
 	if err != nil {
 		if isUniqueViolation(err) {
-			respond(w, http.StatusBadRequest, msg("Job already exists in this department"))
+			respond(w, http.StatusBadRequest, msg("Job already exists in this team"))
 			return
 		}
 		respond500(w, "Create Job Error", err, true)
@@ -230,20 +230,20 @@ func createJob(w http.ResponseWriter, r *http.Request) {
 		respond500(w, "Create Job Error", err, true)
 		return
 	}
-	respond(w, http.StatusCreated, map[string]any{"success": true, "job": map[string]any{"id": id, "name": body.Name, "departmentId": body.DepartmentID}})
+	respond(w, http.StatusCreated, map[string]any{"success": true, "job": map[string]any{"id": id, "name": body.Name, "teamId": body.TeamID}})
 }
 
 func updateJob(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name           string             `json:"name"`
-		DepartmentID   int                `json:"departmentId"`
+		TeamID         int                `json:"teamId"`
 		OptimalWorkers int                `json:"optimalWorkers"`
 		Schedules      []jobScheduleInput `json:"schedules"`
 		Holidays       []jobHolidayInput  `json:"holidays"`
 	}
 	decodeJSON(r, &body)
-	if body.Name == "" || body.DepartmentID == 0 {
-		respond(w, http.StatusBadRequest, msg("name and departmentId are required"))
+	if body.Name == "" || body.TeamID == 0 {
+		respond(w, http.StatusBadRequest, msg("name and teamId are required"))
 		return
 	}
 	if body.OptimalWorkers < 1 {
@@ -257,15 +257,15 @@ func updateJob(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, msg("holidays must be unique YYYY-MM-DD dates"))
 		return
 	}
-	if !deptInCallerLocation(w, r, body.DepartmentID) {
+	if !teamInCallerScope(w, r, body.TeamID) {
 		return
 	}
 	tag, err := db.Exec(r.Context(), `
-		UPDATE jobs SET name = $1, department_id = $2, optimal_workers = $3 WHERE id = $4`,
-		body.Name, body.DepartmentID, body.OptimalWorkers, targetID(r))
+		UPDATE jobs SET name = $1, team_id = $2, optimal_workers = $3 WHERE id = $4`,
+		body.Name, body.TeamID, body.OptimalWorkers, targetID(r))
 	if err != nil {
 		if isUniqueViolation(err) {
-			respond(w, http.StatusBadRequest, msg("Job already exists in this department"))
+			respond(w, http.StatusBadRequest, msg("Job already exists in this team"))
 			return
 		}
 		respond500(w, "Update Job Error", err, true)

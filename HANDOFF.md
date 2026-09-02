@@ -1,5 +1,11 @@
 # Handoff: Scheduling App — Manager Worker-Management Feature
 
+> **Historical** — this describes the pre-rework RBAC (`manager`/`scheduler`
+> roles, assignment side-tables, `locations`/`departments` tables, `public`
+> schema). The current model is documented in `CONTEXT.md`,
+> `docs/adr/0002-single-manager-role-scope-as-data.md`, and
+> `docs/RBAC-REWORK.md`.
+
 ## Goal
 
 Full-stack scheduling app (Next.js frontend → Go API → PostgreSQL, see

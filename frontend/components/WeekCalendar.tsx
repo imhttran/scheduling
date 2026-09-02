@@ -3,7 +3,7 @@
 import type { CSSProperties, ReactNode } from "react";
 
 // A shift as the calendar grid needs it. Callers may extend this type with
-// extra fields (e.g. departmentName) and read them inside renderShift.
+// extra fields (e.g. teamName) and read them inside renderShift.
 export type CalendarShift = {
   id: number;
   date: string;
@@ -96,8 +96,8 @@ function layoutDay(
 
 // Shared week-grid calendar. The time axis, day columns, and gridlines are
 // rendered here; each shift block is delegated to renderShift so callers can
-// style it differently (e.g. a student's own shifts vs. a scheduler's
-// department coverage view).
+// style it differently (e.g. a student's own shifts vs. a manager's
+// team coverage view).
 export function WeekCalendar({
   shifts,
   anchor,

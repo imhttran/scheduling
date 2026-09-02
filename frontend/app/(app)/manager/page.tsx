@@ -9,23 +9,23 @@ import { Modal } from "@/components/Modal";
 import { JobModal, type JobInput } from "@/components/JobModal";
 import { AIAssistantPanel } from "@/components/AIAssistantPanel";
 import { fmtTime } from "@/components/WeekCalendar";
-import { hasRole } from "@/lib/roles";
+import { hasAnyRole, hasRole } from "@/lib/roles";
 import { useSortablePage } from "@/lib/pagination";
 import { DataGrid, type Column } from "@/components/DataGrid";
-import type { Department, Job, Preference, Request, Shift } from "@/lib/types";
+import type { Job, Preference, Request, Shift, Team } from "@/lib/types";
 
-type StudentJob = {
+type WorkerJob = {
   jobId: number;
   jobName: string;
+  teamId: number;
+  teamName: string;
   departmentId: number;
-  departmentName: string;
-  locationId: number;
   minHours: number;
   maxHours: number;
   active: boolean;
 };
 
-type Student = {
+type Worker = {
   id: number;
   email: string;
   disabled: boolean;
@@ -34,7 +34,7 @@ type Student = {
   hourlyLimit: number;
   weekHoursCap: number;
   weekHoursUsed: number;
-  jobs: StudentJob[];
+  jobs: WorkerJob[];
 };
 
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -49,28 +49,28 @@ export default function ManagerPage() {
   const [token, setToken] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<string>("");
-  const [students, setStudents] = useState<Student[]>([]);
+  const [roles, setRoles] = useState<string[]>([]);
+  const [workers, setWorkers] = useState<Worker[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
-  const [departments, setDepartments] = useState<Department[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
-  const [studentModal, setStudentModal] = useState<Student | null>(null);
+  const [workerEditModal, setWorkerEditModal] = useState<Worker | null>(null);
   const [jobModal, setJobModal] = useState<Job | null>(null);
   const [workqueueModal, setWorkqueueModal] = useState(false);
   const [workerModal, setWorkerModal] = useState(false);
   const [workerShifts, setWorkerShifts] = useState<Shift[]>([]);
   const [workerPrefs, setWorkerPrefs] = useState<Preference[]>([]);
 
-  // Schedulers (and admins) can assign shifts to workers; managers set up jobs.
-  const canAssign = hasRole(role, "scheduler");
-  // Managers and admins create/edit jobs; schedulers only view them.
-  const canManageJobs = role === "manager" || role === "admin";
+  // Any manager (or admin) can assign shifts; the server scopes each manager
+  // to their own departments/teams.
+  const canAssign = hasRole(role, "manager");
+  // Managers and admins create/edit jobs; the server enforces the
+  // department-level rule. Membership check so any multi-role holder gets
+  // job management.
+  const canManageJobs = hasAnyRole(roles, "manager", "admin");
 
-  const studentsGrid = useSortablePage<Student>(
-    students,
-    (s) => s.email,
-    "email",
-  );
+  const workersGrid = useSortablePage<Worker>(workers, (s) => s.email, "email");
   const jobsGrid = useSortablePage<Job>(
     jobs,
     (j, key) => {
@@ -90,7 +90,7 @@ export default function ManagerPage() {
     "date",
   );
 
-  const studentColumns: Column<Student>[] = [
+  const workerColumns: Column<Worker>[] = [
     { key: "email", label: "Email", sortable: true },
     { key: "workerTypeLabel", label: "Type", sortable: true },
     {
@@ -110,7 +110,7 @@ export default function ManagerPage() {
         <button
           type="button"
           onClick={() => {
-            setStudentModal(s);
+            setWorkerEditModal(s);
             loadWorkerCalendar(s.id);
             loadWorkerPrefs(s.id);
           }}
@@ -123,7 +123,7 @@ export default function ManagerPage() {
 
   const jobColumns: Column<Job>[] = [
     { key: "name", label: "Job", sortable: true },
-    { key: "departmentName", label: "Department", sortable: true },
+    { key: "teamName", label: "Team", sortable: true },
     ...DAYS.map((d, dow) => ({
       label: d,
       render: (j: Job) => {
@@ -158,7 +158,7 @@ export default function ManagerPage() {
   ];
 
   const shiftColumns: Column<Shift>[] = [
-    { key: "departmentName", label: "Department", sortable: true },
+    { key: "teamName", label: "Team", sortable: true },
     { key: "date", label: "Date", sortable: true },
     {
       key: "startTime",
@@ -184,7 +184,7 @@ export default function ManagerPage() {
               >
                 <select name="userId" defaultValue={sh.assignedUserId ?? ""}>
                   <option value="">Unassigned</option>
-                  {students
+                  {workers
                     .filter(
                       (st) =>
                         st.id === sh.assignedUserId ||
@@ -246,10 +246,10 @@ export default function ManagerPage() {
   ];
 
   const load = useCallback(async (authToken: string) => {
-    const [s, j, sh, d, r] = await Promise.all([
-      callApi<{ students: Student[] }>(
+    const [w, j, sh, t, r] = await Promise.all([
+      callApi<{ workers: Worker[] }>(
         authToken,
-        "/api/students",
+        "/api/workers",
         "GET",
         undefined,
         false,
@@ -262,9 +262,9 @@ export default function ManagerPage() {
         undefined,
         false,
       ),
-      callApi<{ departments: Department[] }>(
+      callApi<{ teams: Team[] }>(
         authToken,
-        "/api/departments",
+        "/api/teams",
         "GET",
         undefined,
         false,
@@ -277,10 +277,10 @@ export default function ManagerPage() {
         false,
       ),
     ]);
-    if (s) setStudents(s.students ?? []);
+    if (w) setWorkers(w.workers ?? []);
     if (j) setJobs(j.jobs ?? []);
     if (sh) setShifts(sh.shifts ?? []);
-    if (d) setDepartments(d.departments ?? []);
+    if (t) setTeams(t.teams ?? []);
     if (r) setRequests(r.requests ?? []);
   }, []);
 
@@ -292,28 +292,21 @@ export default function ManagerPage() {
         return;
       }
       setToken(stored);
-      const me = await callApi<{ user: { email: string; role: string } }>(
-        stored,
-        "/api/me",
-        "GET",
-        undefined,
-        false,
-      );
+      const me = await callApi<{
+        user: { email: string; role: string; roles?: string[] };
+      }>(stored, "/api/me", "GET", undefined, false);
       if (!me) {
         localStorage.removeItem("auth_token");
         window.location.href = "/";
         return;
       }
-      if (
-        me.user.role !== "manager" &&
-        me.user.role !== "scheduler" &&
-        me.user.role !== "admin"
-      ) {
+      if (me.user.role !== "manager" && me.user.role !== "admin") {
         window.location.href = "/dashboard";
         return;
       }
       setEmail(me.user.email);
       setRole(me.user.role);
+      setRoles(me.user.roles ?? [me.user.role]);
       await load(stored);
     })();
   }, [load]);
@@ -341,7 +334,7 @@ export default function ManagerPage() {
 
   const saveAssignment = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!studentModal) return;
+    if (!workerEditModal) return;
     const data = new FormData(event.currentTarget);
     const body: Record<string, unknown> = {};
     for (const [k, v] of data.entries()) body[k] = v;
@@ -349,18 +342,18 @@ export default function ManagerPage() {
     body.jobId = Number(data.get("jobId"));
     body.minHours = Number(data.get("minHours"));
     body.maxHours = Number(data.get("maxHours"));
-    act(`/api/students/${studentModal.id}/jobs`, body);
+    act(`/api/workers/${workerEditModal.id}/jobs`, body);
   };
 
   const saveWorkerDetails = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!studentModal) return;
+    if (!workerEditModal) return;
     const data = new FormData(event.currentTarget);
     const workerType = String(data.get("workerType"));
     let hourlyLimit = Number(data.get("hourlyLimit")) || 0;
     if (workerType !== "hourly") hourlyLimit = 0;
     act(
-      `/api/users/${studentModal.id}/worker`,
+      `/api/users/${workerEditModal.id}/worker`,
       {
         workerType,
         hourlyLimit: hourlyLimit || null,
@@ -382,8 +375,12 @@ export default function ManagerPage() {
   };
 
   const removeJob = (jobId: number) => {
-    if (!studentModal) return;
-    act(`/api/students/${studentModal.id}/jobs/${jobId}`, undefined, "DELETE");
+    if (!workerEditModal) return;
+    act(
+      `/api/workers/${workerEditModal.id}/jobs/${jobId}`,
+      undefined,
+      "DELETE",
+    );
   };
 
   const loadWorkerCalendar = async (id: number) => {
@@ -412,13 +409,13 @@ export default function ManagerPage() {
 
   const saveSchedule = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!studentModal) return;
+    if (!workerEditModal) return;
     const data = new FormData(event.currentTarget);
     const body: Record<string, unknown> = {};
     for (const [k, v] of data.entries()) body[k] = v;
     body.jobId = Number(data.get("jobId"));
     body.dayOfWeek = Number(data.get("dayOfWeek"));
-    act(`/api/students/${studentModal.id}/schedule`, body);
+    act(`/api/workers/${workerEditModal.id}/schedule`, body);
     event.currentTarget.reset();
   };
 
@@ -427,7 +424,7 @@ export default function ManagerPage() {
     const data = new FormData(event.currentTarget);
     const body: Record<string, unknown> = {};
     for (const [k, v] of data.entries()) body[k] = v;
-    body.departmentId = Number(data.get("departmentId"));
+    body.teamId = Number(data.get("teamId"));
     act("/api/workqueue", body);
     setWorkqueueModal(false);
   };
@@ -435,7 +432,7 @@ export default function ManagerPage() {
   const saveJob = (data: JobInput) => {
     const body: Record<string, unknown> = {
       name: data.name,
-      departmentId: data.departmentId,
+      teamId: data.teamId,
       optimalWorkers: data.optimalWorkers,
       schedules: data.schedules.map((s) => ({
         dayOfWeek: s.dayOfWeek,
@@ -482,17 +479,18 @@ export default function ManagerPage() {
 
       <div className="with-sidebar">
         <nav className="sidebar">
-          <a href="/scheduler/calendar">Calendar view</a>
-          <a href="#students">Workers</a>
+          <a href="/calendar">Calendar view</a>
+          <a href="#workers">Workers</a>
           <a href="#jobs">Job Requirements</a>
           <a href="#workqueue">Workqueue</a>
           <a href="#requests">Requests</a>
+          <a href="/audit">Audit Report</a>
           <a className="logout-link" href="/" onClick={logout}>
             Logout
           </a>
         </nav>
         <div className="dashboard-card">
-          <div className="user-list-section" id="students">
+          <div className="user-list-section" id="workers">
             <div className="section-title-row">
               <h2>Workers</h2>
               {canManageJobs && (
@@ -511,10 +509,10 @@ export default function ManagerPage() {
               manager-set limit. Overtime needs manager approval.
             </p>
             <DataGrid
-              grid={studentsGrid}
-              columns={studentColumns}
+              grid={workersGrid}
+              columns={workerColumns}
               getRowKey={(s) => s.id}
-              emptyText="No workers in your location."
+              emptyText="No workers in your teams."
             />
           </div>
 
@@ -529,10 +527,10 @@ export default function ManagerPage() {
                     setJobModal({
                       id: 0,
                       name: "",
+                      teamId: 0,
+                      teamName: "",
                       departmentId: 0,
                       departmentName: "",
-                      locationId: 0,
-                      locationName: "",
                       optimalWorkers: 1,
                       currentWorkers: 0,
                       weeklyHours: 0,
@@ -547,14 +545,14 @@ export default function ManagerPage() {
             </div>
             <p className="section-hint">
               Daily operating hours, the weekly hour requirement, and staff
-              coverage (current / optimal) for each job in your location. Days
-              with no hours are closed (weekend, holiday).
+              coverage (current / optimal) for each job in your teams. Days with
+              no hours are closed (weekend, holiday).
             </p>
             <DataGrid
               grid={jobsGrid}
               columns={jobColumns}
               getRowKey={(j) => j.id}
-              emptyText="No jobs in your location."
+              emptyText="No jobs in your teams."
             />
           </div>
 
@@ -570,9 +568,7 @@ export default function ManagerPage() {
               </button>
             </div>
             <p className="section-hint">
-              {role === "scheduler"
-                ? "All slots in your department."
-                : "All slots in your location."}{" "}
+              All slots in your teams.{" "}
               {canAssign
                 ? "Assign a slot to a worker (or unassign it) to build the schedule."
                 : "Open shifts students can pick from, or return missed shifts here."}
@@ -597,10 +593,10 @@ export default function ManagerPage() {
         </div>
       </div>
 
-      {studentModal && (
+      {workerEditModal && (
         <Modal
-          title={`Edit ${studentModal.email}`}
-          onClose={() => setStudentModal(null)}
+          title={`Edit ${workerEditModal.email}`}
+          onClose={() => setWorkerEditModal(null)}
         >
           <div className="modal-form">
             <h4>This Week's Schedule</h4>
@@ -612,7 +608,7 @@ export default function ManagerPage() {
                   <li key={sh.id}>
                     <span>
                       {sh.date} · {fmtTime(sh.startTime)}–{fmtTime(sh.endTime)}{" "}
-                      · {sh.departmentName}
+                      · {sh.teamName}
                     </span>
                   </li>
                 ))}
@@ -626,8 +622,8 @@ export default function ManagerPage() {
               <p className="section-hint">No preferred times set.</p>
             ) : (
               <ul className="job-list">
-                {workerPrefs.map((p, i) => (
-                  <li key={i}>
+                {workerPrefs.map((p) => (
+                  <li key={p.id}>
                     <span>
                       {DAYS[p.dayOfWeek]} · {fmtTime(p.startTime)}–
                       {fmtTime(p.endTime)}
@@ -640,16 +636,16 @@ export default function ManagerPage() {
 
           <div className="modal-form">
             <h4>Current Jobs</h4>
-            {studentModal.jobs.length === 0 ? (
+            {workerEditModal.jobs.length === 0 ? (
               <p className="section-hint">No jobs assigned yet.</p>
             ) : (
               <ul className="job-list">
-                {studentModal.jobs.map((j) => (
+                {workerEditModal.jobs.map((j) => (
                   <li key={j.jobId}>
                     <span>
                       {j.jobName}{" "}
                       <em>
-                        ({j.departmentName} · {j.minHours}–{j.maxHours}h)
+                        ({j.teamName} · {j.minHours}–{j.maxHours}h)
                       </em>
                     </span>
                     <button
@@ -671,7 +667,7 @@ export default function ManagerPage() {
               Weekly hours: student 20; full-time 40 (+20 overtime); hourly
               manager-set limit. Overtime needs manager approval.
             </p>
-            <select name="workerType" defaultValue={studentModal.workerType}>
+            <select name="workerType" defaultValue={workerEditModal.workerType}>
               <option value="student">Student (20 hrs/wk)</option>
               <option value="fulltime">Full-time staff (40 + 20 ot)</option>
               <option value="hourly">Hourly staff (set limit)</option>
@@ -684,8 +680,8 @@ export default function ManagerPage() {
                 min={1}
                 max={40}
                 defaultValue={
-                  studentModal.workerType === "hourly"
-                    ? studentModal.hourlyLimit
+                  workerEditModal.workerType === "hourly"
+                    ? workerEditModal.hourlyLimit
                     : 40
                 }
               />
@@ -702,7 +698,7 @@ export default function ManagerPage() {
             <select name="jobId" required>
               {jobs.map((j) => (
                 <option key={j.id} value={j.id}>
-                  {j.name} ({j.departmentName})
+                  {j.name} ({j.teamName})
                 </option>
               ))}
             </select>
@@ -732,7 +728,7 @@ export default function ManagerPage() {
           <form className="modal-form" onSubmit={saveSchedule}>
             <h4>Add Weekly Schedule</h4>
             <select name="jobId" required>
-              {studentModal.jobs.map((j) => (
+              {workerEditModal.jobs.map((j) => (
                 <option key={j.jobId} value={j.jobId}>
                   {j.jobName}
                 </option>
@@ -758,7 +754,7 @@ export default function ManagerPage() {
             <button
               type="button"
               className="cancel-button"
-              onClick={() => setStudentModal(null)}
+              onClick={() => setWorkerEditModal(null)}
             >
               Close
             </button>
@@ -795,7 +791,7 @@ export default function ManagerPage() {
             <select name="jobId" required>
               {jobs.map((j) => (
                 <option key={j.id} value={j.id}>
-                  {j.name} ({j.departmentName})
+                  {j.name} ({j.teamName})
                 </option>
               ))}
             </select>
@@ -837,8 +833,8 @@ export default function ManagerPage() {
           onClose={() => setWorkqueueModal(false)}
         >
           <form className="modal-form" onSubmit={saveWorkqueue}>
-            <select name="departmentId" required>
-              {departments.map((d) => (
+            <select name="teamId" required>
+              {teams.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
                 </option>
@@ -866,7 +862,7 @@ export default function ManagerPage() {
       {jobModal && (
         <JobModal
           job={jobModal.id > 0 ? jobModal : null}
-          departments={departments}
+          teams={teams}
           onSave={saveJob}
           onClose={() => setJobModal(null)}
         />

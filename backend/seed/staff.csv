@@ -1,4 +1,4 @@
-email,first,last,job,department,location,worker_type
+email,first,last,job,team,department,worker_type
 security-jester@mail.edu,Sasha,Stone,Security Guard,Facilities - Jester,Jester,fulltime
 security-jester2@mail.edu,Marcus,Reed,Security Guard,Facilities - Jester,Jester,fulltime
 security-jester3@mail.edu,Priya,Nair,Security Guard,Facilities - Jester,Jester,fulltime

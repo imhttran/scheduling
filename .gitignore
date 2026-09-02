@@ -8,3 +8,5 @@ node_modules/
 research/
 scripts/demo/out/
 scripts/demo/.venv/
+.DS_Store
+backend/app

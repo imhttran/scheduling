@@ -29,7 +29,7 @@ const aiChatTimeout = 120 * time.Second
 // aiChat proxies a single user message to any OpenAI-compatible chat-completions
 // endpoint (OpenAI, Ollama, LM Studio, etc.). The pre-configured prompt, model,
 // base URL and API key all come from the environment (see loadConfig), so no
-// credentials ever reach the browser. Only manager/admin roles are allowed in,
+// credentials ever reach the browser. Only managers and up are allowed in,
 // enforced by the route guard in app.go.
 func aiChat(w http.ResponseWriter, r *http.Request) {
 	if cfg.AIAPIKey == "" || cfg.AIBaseURL == "" || cfg.AIModel == "" {

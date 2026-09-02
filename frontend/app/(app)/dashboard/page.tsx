@@ -24,6 +24,7 @@ type MeUser = {
   id: number;
   email: string;
   role: string;
+  roles: string[];
   emailVerified: boolean;
   mustChangePassword?: boolean;
   hasProfile?: boolean;
@@ -33,6 +34,7 @@ type UserRow = {
   id: number;
   email: string;
   role: string;
+  roles: string[];
   emailVerified: boolean;
 };
 
@@ -191,7 +193,8 @@ export default function DashboardPage() {
         }
         setMe(user);
 
-        // Route by role: students/managers/admins get their own schedule pages.
+        // Route by role: each role gets its own page (the old scheduler role
+        // is merged into manager).
         if (user.role === "student") {
           window.location.href = "/student";
           return;
@@ -200,7 +203,7 @@ export default function DashboardPage() {
           window.location.href = "/staff";
           return;
         }
-        if (user.role === "manager" || user.role === "scheduler") {
+        if (user.role === "manager") {
           window.location.href = "/manager";
           return;
         }
@@ -317,17 +320,21 @@ export default function DashboardPage() {
     { key: "email", label: "Email", sortable: true },
     {
       key: "role",
-      label: "Role",
+      label: "Roles",
       sortable: true,
       render: (u) =>
         isAdmin && u.id !== me?.id ? (
           <select
             key={u.role}
-            defaultValue={u.role}
+            multiple
+            size={Math.min(u.roles?.length ?? 1, ROLES.length)}
+            defaultValue={u.roles}
             onChange={(event: ChangeEvent<HTMLSelectElement>) =>
               withToken(async (authToken) => {
                 await callApi(authToken, `/api/users/${u.id}/role`, "PATCH", {
-                  role: event.target.value,
+                  roles: Array.from(event.target.selectedOptions).map(
+                    (o) => o.value,
+                  ),
                 });
                 await loadUsers(authToken);
               })
@@ -340,7 +347,7 @@ export default function DashboardPage() {
             ))}
           </select>
         ) : (
-          u.role
+          (u.roles ?? []).join(", ")
         ),
     },
     {
@@ -422,7 +429,7 @@ export default function DashboardPage() {
           <span>
             Role:{" "}
             <span id="user-role" className="highlight">
-              {me?.role ?? "..."}
+              {me ? (me.roles ?? [me.role]).join(", ") : "..."}
             </span>{" "}
             · Email verified:{" "}
             <span id="user-verified" className="highlight">

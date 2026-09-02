@@ -14,7 +14,7 @@ import {
 } from "@/components/WeekCalendar";
 
 type Shift = CalendarShift & {
-  departmentName: string;
+  teamName: string;
 };
 
 export default function CalendarPage() {
@@ -117,7 +117,7 @@ export default function CalendarPage() {
                   <span className="cal-shift-time">
                     {fmtTime(shift.startTime)}–{fmtTime(shift.endTime)}
                   </span>
-                  <span className="cal-shift-dept">{shift.departmentName}</span>
+                  <span className="cal-shift-dept">{shift.teamName}</span>
                 </div>
               );
             }}

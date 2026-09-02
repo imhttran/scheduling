@@ -18,9 +18,10 @@ import {
   type ResourceShift,
 } from "@/components/ResourceCalendar";
 import { dateStr, fmtTime, mondayOf, toMin } from "@/components/WeekCalendar";
+import type { AuditEntry } from "@/lib/types";
 
 type Shift = ResourceShift & {
-  departmentName: string;
+  teamName: string;
   status: string;
   parentShiftId: number;
 };
@@ -33,7 +34,7 @@ type Block = {
   taken: boolean;
 };
 
-type Student = {
+type Worker = {
   id: number;
   email: string;
   name: string;
@@ -94,26 +95,27 @@ const buildBlocks = (group: Shift[]): Block[] => {
   return blocks;
 };
 
-export default function SchedulerCalendarPage() {
+export default function ManagerCalendarPage() {
   const [token, setToken] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [shifts, setShifts] = useState<Shift[]>([]);
-  const [students, setStudents] = useState<Student[]>([]);
+  const [workers, setWorkers] = useState<Worker[]>([]);
   const [anchor, setAnchor] = useState(() => dateStr(new Date()));
   // Workers (by id) currently hidden from the view; open shifts toggle separately.
   const [hiddenWorkers, setHiddenWorkers] = useState<Set<number>>(new Set());
   const [hideOpen, setHideOpen] = useState(false);
   // The open shift currently being assigned, if any.
   const [assigning, setAssigning] = useState<Shift | null>(null);
+  const [shiftAudit, setShiftAudit] = useState<AuditEntry[]>([]);
   // Selected worker in the assign modal (0 = unassigned). For hourly workers,
-  // the scheduler checks one or more 2-hour blocks to assign.
+  // the manager checks one or more 2-hour blocks to assign.
   const [selectedId, setSelectedId] = useState(0);
   const [selectedBlocks, setSelectedBlocks] = useState<Set<string>>(new Set());
 
   const load = useCallback(async (authToken: string, date: string) => {
     const res = await callApi<{ shifts: Shift[] }>(
       authToken,
-      `/api/scheduler/calendar?date=${date}`,
+      `/api/calendar?date=${date}`,
       "GET",
       undefined,
       false,
@@ -121,15 +123,15 @@ export default function SchedulerCalendarPage() {
     if (res) setShifts(res.shifts ?? []);
   }, []);
 
-  const loadStudents = useCallback(async (authToken: string) => {
-    const res = await callApi<{ students: Student[] }>(
+  const loadWorkers = useCallback(async (authToken: string) => {
+    const res = await callApi<{ workers: Worker[] }>(
       authToken,
-      "/api/students",
+      "/api/workers",
       "GET",
       undefined,
       false,
     );
-    if (res) setStudents(res.students ?? []);
+    if (res) setWorkers(res.workers ?? []);
   }, []);
 
   useEffect(() => {
@@ -157,10 +159,10 @@ export default function SchedulerCalendarPage() {
         return;
       }
       setEmail(me.user.email);
-      await Promise.all([load(stored, anchor), loadStudents(stored)]);
+      await Promise.all([load(stored, anchor), loadWorkers(stored)]);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [load, loadStudents]);
+  }, [load, loadWorkers]);
 
   const move = (days: number) => {
     const monday = mondayOf(anchor);
@@ -183,7 +185,7 @@ export default function SchedulerCalendarPage() {
   };
 
   // All workers with shifts this week, for the filter chips.
-  const workers = useMemo(() => {
+  const shiftWorkers = useMemo(() => {
     const map = new Map<number, string>();
     for (const s of shifts) {
       if (s.assignedUserId !== 0 && !map.has(s.assignedUserId)) {
@@ -236,8 +238,19 @@ export default function SchedulerCalendarPage() {
     );
     if (res) {
       setAssigning(null);
-      await Promise.all([load(token, anchor), loadStudents(token)]);
+      await Promise.all([load(token, anchor), loadWorkers(token)]);
     }
+  };
+
+  const loadShiftAudit = async (authToken: string, shiftId: number) => {
+    const res = await callApi<{ entries: AuditEntry[] }>(
+      authToken,
+      `/api/audit?entityType=workqueue&entityId=${shiftId}`,
+      "GET",
+      undefined,
+      false,
+    );
+    if (res) setShiftAudit(res.entries ?? []);
   };
 
   const openAssign = (shift: Shift) => {
@@ -249,6 +262,9 @@ export default function SchedulerCalendarPage() {
     setSelectedBlocks(
       new Set(shift.assignedUserId === 0 ? [shift.startTime] : []),
     );
+    // Show who has acted on this shift while the manager works on it.
+    setShiftAudit([]);
+    if (token) void loadShiftAudit(token, shift.id);
   };
 
   // The full shift the modal is operating on: the clicked row plus any rows
@@ -280,8 +296,8 @@ export default function SchedulerCalendarPage() {
       }, 0)
     : 0;
 
-  const eligibleStudents = assigning
-    ? students.filter(
+  const eligibleWorkers = assigning
+    ? workers.filter(
         (st) =>
           st.id === assigning.assignedUserId || // always keep the current assignee selectable
           st.weekHoursUsed + assignHours <= st.weekHoursCap,
@@ -309,13 +325,14 @@ export default function SchedulerCalendarPage() {
       <div className="with-sidebar">
         <nav className="sidebar">
           <a href="/manager">Back to schedule</a>
+          <a href="/audit">Audit Report</a>
           <a className="logout-link" href="/" onClick={logout}>
             Logout
           </a>
         </nav>
         <div className="cal-content">
           <div className="res-filter">
-            {workers.map(([id, name]) => {
+            {shiftWorkers.map(([id, name]) => {
               const active = !hiddenWorkers.has(id);
               return (
                 <button
@@ -406,9 +423,9 @@ export default function SchedulerCalendarPage() {
               <form className="modal-form" onSubmit={submitAssign}>
                 <p className="section-hint">
                   {assigning.date} · {fmtTime(assigning.startTime)}–
-                  {fmtTime(assigning.endTime)} · {assigning.departmentName}
+                  {fmtTime(assigning.endTime)} · {assigning.teamName}
                 </p>
-                {eligibleStudents.length === 0 && (
+                {eligibleWorkers.length === 0 && (
                   <p className="section-hint">
                     No other workers available (all at their weekly hour cap).
                   </p>
@@ -419,7 +436,7 @@ export default function SchedulerCalendarPage() {
                   onChange={(e) => setSelectedId(Number(e.target.value))}
                 >
                   <option value="">Unassigned</option>
-                  {eligibleStudents.map((st) => (
+                  {eligibleWorkers.map((st) => (
                     <option key={st.id} value={st.id}>
                       {st.name || st.email} ({st.weekHoursUsed}/
                       {st.weekHoursCap}h)
@@ -487,12 +504,26 @@ export default function SchedulerCalendarPage() {
                   {assigning.assignedUserId ? "Reassign" : "Assign"}
                 </button>
               </form>
+              <div style={{ marginTop: 16 }}>
+                <div className="modal-label">Recent activity</div>
+                {shiftAudit.length === 0 && (
+                  <p className="section-hint">
+                    No recorded activity for this shift in the last 15 days.
+                  </p>
+                )}
+                {shiftAudit.map((e) => (
+                  <p key={e.id} className="section-hint">
+                    {e.action} · {e.actorEmail ?? "—"} ·{" "}
+                    {new Date(e.createdAt).toLocaleString()}
+                  </p>
+                ))}
+              </div>
             </Modal>
           )}
         </div>
       </div>
 
-      <PageFooter meta={<span>Scheduler calendar</span>} />
+      <PageFooter meta={<span>Manager calendar</span>} />
     </div>
   );
 }

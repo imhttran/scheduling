@@ -12,15 +12,26 @@ PORT_BACKEND=8080
 PORT_FRONTEND=3000
 
 # Load env files the way the Go backend does (personal .env wins, .env.dev
-# fills in for development) — only used by the reset-database command.
+# fills in for development) — used by the status check, database reset, and
+# re-seed commands.
 load_db_url() {
-  local url="postgres://postgres:postgres@localhost:5432/go_template?sslmode=disable"
+  local url="postgres://postgres:postgres@localhost:5432/go_template?sslmode=disable&search_path=scheduling"
   if [ -f "$ROOT_DIR/.env" ]; then
     url=$(grep -E '^DATABASE_URL=' "$ROOT_DIR/.env" | tail -1 | cut -d= -f2- | tr -d '"' || true)
   fi
   if [ ! -f "$ROOT_DIR/.env" ] && [ -f "$ROOT_DIR/.env.dev" ]; then
     url=$(grep -E '^DATABASE_URL=' "$ROOT_DIR/.env.dev" | tail -1 | cut -d= -f2- | tr -d '"')
   fi
+  # libpq (pg_isready, psql) rejects `search_path=` as a URI query parameter —
+  # only the Go driver accepts it. Strip it here; every command below targets
+  # the scheduling schema explicitly. The backend enforces search_path itself
+  # per connection, so the DSN parameter is only a convenience for pgx tools.
+  url=$(printf '%s' "$url" | sed -E -e 's/[?&]search_path=[^&]*//' -e 's/\?&/?/' -e 's/&&+/\u0026/' -e 's/[?&]$//')
+  # If search_path was the only query parameter, the separator needs restoring.
+  case "$url" in
+    *\?*) ;;
+    *\&*) url=${url/\&/?} ;;
+  esac
   echo "$url"
 }
 
@@ -123,7 +134,7 @@ reset_database() {
   echo -e "${RED}This drops ALL tables in: ${url}${NC}"
   read -r -p "Type 'yes' to confirm: " confirm
   if [ "$confirm" != "yes" ]; then echo "Aborted."; return 0; fi
-  psql "$url" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' || return 1
+  psql "$url" -c 'DROP SCHEMA IF EXISTS scheduling CASCADE; CREATE SCHEMA scheduling;' || return 1
   echo -e "${GREEN}Database reset. Tables re-apply on next backend start.${NC}"
 }
 
@@ -135,7 +146,7 @@ re_seed() {
   echo -e "${RED}This drops ALL tables in: ${url}${NC}"
   read -r -p "Type 'yes' to confirm: " confirm
   if [ "$confirm" != "yes" ]; then echo "Aborted."; return 0; fi
-  psql "$url" -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' || return 1
+  psql "$url" -c 'DROP SCHEMA IF EXISTS scheduling CASCADE; CREATE SCHEMA scheduling;' || return 1
   stop_service backend Backend "$PORT_BACKEND"
   start_backend || return 1
   echo -e "${GREEN}Database re-seeded.${NC}"

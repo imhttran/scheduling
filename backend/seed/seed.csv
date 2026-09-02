@@ -1,4 +1,4 @@
-email,password,firstname,lastname,address1,address2,city,state,zip,country,role,department,department_code,location,location_abbr,location_address,location_city,location_state,location_zip,location_country,phone,uid,min_hours,max_hours,worker_type,hourly_limit
+email,password,firstname,lastname,address1,address2,city,state,zip,country,role,team,team_code,department,department_abbr,department_address,department_city,department_state,department_zip,department_country,phone,uid,min_hours,max_hours,worker_type,hourly_limit
 manager@mail.edu,Manager1234!,Maya,Manager,100 Admin Way,,Austin,TX,78701,US,manager,,,Jester,JST,201 E 21st St,Austin,TX,78705,US,512-555-0100,U00001,0,0,,
 manager2@mail.edu,Manager1234!,Noah,Nelson,110 Fac Mgr Way,,Austin,TX,78705,US,manager,,,Kin Solving,KIN,1901 University Ave,Austin,TX,78705,US,512-555-0101,U00002,0,0,,
 manager3@mail.edu,Manager1234!,Olivia,Ortega,120 Biz Mgr Way,,Austin,TX,78712,US,manager,,,Little Field,LTF,2400 Whitis Ave,Austin,TX,78712,US,512-555-0102,U00003,0,0,,

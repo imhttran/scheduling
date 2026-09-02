@@ -2,21 +2,20 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"github.com/jackc/pgx/v5"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
-// Department IDs the student is qualified for via their active jobs.
-func studentDepartmentIDs(ctx context.Context, userID int) ([]int, error) {
+// Team IDs the worker belongs to via active worker_teams membership.
+func workerTeamIDs(ctx context.Context, userID int) ([]int, error) {
 	rows, err := db.Query(ctx, `
-		SELECT j.department_id FROM student_jobs sj
-		JOIN jobs j ON j.id = sj.job_id
-		WHERE sj.user_id = $1 AND sj.active`, userID)
+		SELECT wt.team_id FROM worker_teams wt
+		WHERE wt.user_id = $1 AND wt.active`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -32,27 +31,44 @@ func studentDepartmentIDs(ctx context.Context, userID int) ([]int, error) {
 	return ids, rows.Err()
 }
 
-// The manager's location scope (0 if unassigned). Admin bypasses the check.
-func managerLocationID(ctx context.Context, userID int) (int, error) {
-	var locID int
-	err := db.QueryRow(ctx,
-		`SELECT location_id FROM manager_assignments WHERE user_id = $1`, userID).Scan(&locID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, nil
-	}
-	return locID, err
+// Department IDs the caller manages — their department-wide scope. Admins
+// bypass scoping and never consult these.
+func managerDepartmentIDs(ctx context.Context, userID int) ([]int, error) {
+	return scanIDs(db.Query(ctx,
+		`SELECT id FROM departments WHERE manager_id = $1`, userID))
 }
 
-// schedulerDepartmentID returns the department a scheduler is scoped to (0 if
-// none). Schedulers manage the schedule for a single department.
-func schedulerDepartmentID(ctx context.Context, userID int) (int, error) {
-	var deptID int
-	err := db.QueryRow(ctx,
-		`SELECT department_id FROM scheduler_assignments WHERE user_id = $1`, userID).Scan(&deptID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, nil
+// Team IDs the caller manages directly — their team scope.
+func managerTeamIDs(ctx context.Context, userID int) ([]int, error) {
+	return scanIDs(db.Query(ctx,
+		`SELECT id FROM teams WHERE manager_id = $1`, userID))
+}
+
+// callerScopeTeamIDs is the caller's effective scope: the teams they manage
+// directly plus every team under the departments they manage (a manager may
+// hold several of each).
+func callerScopeTeamIDs(ctx context.Context, userID int) ([]int, error) {
+	return scanIDs(db.Query(ctx, `
+		SELECT t.id FROM teams t
+		WHERE t.manager_id = $1
+		   OR t.department_id IN (SELECT id FROM departments WHERE manager_id = $1)`, userID))
+}
+
+// scanIDs drains a single-column id query.
+func scanIDs(rows pgx.Rows, err error) ([]int, error) {
+	if err != nil {
+		return nil, err
 	}
-	return deptID, err
+	defer rows.Close()
+	ids := []int{}
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // Date for a day_of_week (0=Sun..6=Sat) in the current week.
@@ -98,78 +114,161 @@ func addHours(t string, hours float64) string {
 	return fmt.Sprintf("%02d:%02d", nh, nm)
 }
 
-// Writes a 403 (and returns false) unless the department is in the caller's
-// location. Admins are exempt (they manage everything).
-func deptInCallerLocation(w http.ResponseWriter, r *http.Request, deptID int) bool {
+// Writes a 403 (and returns false) unless the team is in the caller's scope —
+// one of their managed teams or a team under one of their managed departments.
+// Admins are exempt (they manage everything).
+func teamInCallerScope(w http.ResponseWriter, r *http.Request, teamID int) bool {
 	u := currentUser(r)
 	if hasRole(u.Role, "admin") {
 		return true
 	}
-	locID, err := managerLocationID(r.Context(), u.ID)
+	deptIDs, err := managerDepartmentIDs(r.Context(), u.ID)
 	if err != nil {
-		respond500(w, "Location Error", err, false)
+		respond500(w, "Scope Error", err, false)
+		return false
+	}
+	teamIDs, err := managerTeamIDs(r.Context(), u.ID)
+	if err != nil {
+		respond500(w, "Scope Error", err, false)
 		return false
 	}
 	var ok bool
 	if err := db.QueryRow(r.Context(),
-		`SELECT EXISTS (SELECT 1 FROM departments WHERE id = $1 AND location_id = $2)`,
-		deptID, locID).Scan(&ok); err != nil {
-		respond500(w, "Location Error", err, false)
+		`SELECT EXISTS (
+			SELECT 1 FROM teams t
+			WHERE t.id = $1 AND (t.id = ANY($2) OR t.department_id = ANY($3)))`,
+		teamID, teamIDs, deptIDs).Scan(&ok); err != nil {
+		respond500(w, "Scope Error", err, false)
 		return false
 	}
 	if !ok {
-		respond(w, http.StatusForbidden, msg("Department not in your location"))
+		respond(w, http.StatusForbidden, msg("Team not in your scope"))
+		return false
+	}
+	return true
+}
+
+// Writes a 403 (and returns false) unless the job's team is in the caller's
+// scope. Admins are exempt (they manage everything).
+func jobInCallerScope(w http.ResponseWriter, r *http.Request, jobID int) bool {
+	u := currentUser(r)
+	if hasRole(u.Role, "admin") {
+		return true
+	}
+	deptIDs, err := managerDepartmentIDs(r.Context(), u.ID)
+	if err != nil {
+		respond500(w, "Scope Error", err, false)
+		return false
+	}
+	teamIDs, err := managerTeamIDs(r.Context(), u.ID)
+	if err != nil {
+		respond500(w, "Scope Error", err, false)
+		return false
+	}
+	var ok bool
+	if err := db.QueryRow(r.Context(),
+		`SELECT EXISTS (
+			SELECT 1 FROM jobs j JOIN teams t ON t.id = j.team_id
+			WHERE j.id = $1 AND (t.id = ANY($2) OR t.department_id = ANY($3)))`,
+		jobID, teamIDs, deptIDs).Scan(&ok); err != nil {
+		respond500(w, "Scope Error", err, false)
+		return false
+	}
+	if !ok {
+		respond(w, http.StatusForbidden, msg("Job not in your scope"))
+		return false
+	}
+	return true
+}
+
+// Writes a 403 (and returns false) unless the workqueue shift is in the
+// caller's scope. Admins are exempt (they manage everything).
+func shiftInCallerScope(w http.ResponseWriter, r *http.Request, shiftID int) bool {
+	u := currentUser(r)
+	if hasRole(u.Role, "admin") {
+		return true
+	}
+	teamIDs, err := callerScopeTeamIDs(r.Context(), u.ID)
+	if err != nil {
+		respond500(w, "Scope Error", err, false)
+		return false
+	}
+	var ok bool
+	if err := db.QueryRow(r.Context(),
+		`SELECT EXISTS (SELECT 1 FROM workqueue WHERE id = $1 AND team_id = ANY($2))`,
+		shiftID, teamIDs).Scan(&ok); err != nil {
+		respond500(w, "Scope Error", err, false)
+		return false
+	}
+	if !ok {
+		respond(w, http.StatusForbidden, msg("Shift not in your scope"))
+		return false
+	}
+	return true
+}
+
+// Writes a 403 (and returns false) unless the worker is a member of a team in
+// the caller's scope. Admins are exempt (they manage everything).
+func workerInCallerScope(w http.ResponseWriter, r *http.Request, workerID int) bool {
+	u := currentUser(r)
+	if hasRole(u.Role, "admin") {
+		return true
+	}
+	teamIDs, err := callerScopeTeamIDs(r.Context(), u.ID)
+	if err != nil {
+		respond500(w, "Scope Error", err, false)
+		return false
+	}
+	var ok bool
+	if err := db.QueryRow(r.Context(), `
+		SELECT EXISTS (
+			SELECT 1 FROM worker_teams wt
+			WHERE wt.user_id = $1 AND wt.active AND wt.team_id = ANY($2))`, workerID, teamIDs).Scan(&ok); err != nil {
+		respond500(w, "Scope Error", err, false)
+		return false
+	}
+	if !ok {
+		respond(w, http.StatusForbidden, msg("Worker does not work in your scope"))
 		return false
 	}
 	return true
 }
 
 // Writes a 403 (and returns false) unless the schedule request's shift is in
-// the caller's location. Admins are exempt (they manage everything).
-func requestInCallerLocation(w http.ResponseWriter, r *http.Request, reqID int) bool {
+// the caller's scope. Admins are exempt (they manage everything).
+func requestInCallerScope(w http.ResponseWriter, r *http.Request, reqID int) bool {
 	u := currentUser(r)
 	if hasRole(u.Role, "admin") {
 		return true
 	}
-	if u.Role == "scheduler" {
-		deptID, err := schedulerDepartmentID(r.Context(), u.ID)
-		if err != nil {
-			respond500(w, "Location Error", err, false)
-			return false
-		}
-		var ok bool
-		if err := db.QueryRow(r.Context(), `
-			SELECT EXISTS (
-				SELECT 1 FROM schedule_requests r
-				JOIN workqueue w ON w.id = r.workqueue_id
-				WHERE r.id = $1 AND w.department_id = $2)`, reqID, deptID).Scan(&ok); err != nil {
-			respond500(w, "Location Error", err, false)
-			return false
-		}
-		if !ok {
-			respond(w, http.StatusForbidden, msg("Request not in your department"))
-			return false
-		}
-		return true
-	}
-	locID, err := managerLocationID(r.Context(), u.ID)
+	teamIDs, err := callerScopeTeamIDs(r.Context(), u.ID)
 	if err != nil {
-		respond500(w, "Location Error", err, false)
+		respond500(w, "Scope Error", err, false)
 		return false
 	}
 	var ok bool
 	if err := db.QueryRow(r.Context(), `
 		SELECT EXISTS (
 			SELECT 1 FROM schedule_requests r
-			JOIN workqueue w ON w.id = r.workqueue_id
-			JOIN departments d ON d.id = w.department_id
-			WHERE r.id = $1 AND d.location_id = $2)`, reqID, locID).Scan(&ok); err != nil {
-		respond500(w, "Location Error", err, false)
+			JOIN workqueue wq ON wq.id = r.workqueue_id
+			WHERE r.id = $1 AND wq.team_id = ANY($2))`, reqID, teamIDs).Scan(&ok); err != nil {
+		respond500(w, "Scope Error", err, false)
 		return false
 	}
 	if !ok {
-		respond(w, http.StatusForbidden, msg("Request not in your location"))
+		respond(w, http.StatusForbidden, msg("Request not in your scope"))
 		return false
 	}
 	return true
+}
+
+// Writes a 403 (and returns false) unless the caller manages at least one
+// department — the bar for department-level actions (creating teams, jobs,
+// workers), which a team-scoped manager doesn't clear. Admins are exempt.
+func callerHasDepartmentScope(ctx context.Context, userID int) (bool, error) {
+	ids, err := managerDepartmentIDs(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return len(ids) > 0, nil
 }

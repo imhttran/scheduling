@@ -4,11 +4,12 @@ import (
 	"net/http"
 )
 
-// Manager-scoped: a worker's preferred days/times.
+// Manager-scoped: a worker's preferred days/times. Visibility is team
+// membership (worker_teams) in the caller's scope.
 func workerPreferences(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	if !hasRole(u.Role, "admin") {
-		locID, err := managerLocationID(r.Context(), u.ID)
+		teamIDs, err := callerScopeTeamIDs(r.Context(), u.ID)
 		if err != nil {
 			respond500(w, "Worker Preferences Error", err, false)
 			return
@@ -16,16 +17,14 @@ func workerPreferences(w http.ResponseWriter, r *http.Request) {
 		var ok bool
 		if err := db.QueryRow(r.Context(), `
 			SELECT EXISTS (
-				SELECT 1 FROM student_jobs sj
-				JOIN jobs j ON j.id = sj.job_id
-				JOIN departments d ON d.id = j.department_id
-				WHERE sj.user_id = $1 AND d.location_id = $2)`, targetID(r), locID).Scan(&ok); err != nil || !ok {
-			respond(w, http.StatusForbidden, msg("Worker not in your location"))
+				SELECT 1 FROM worker_teams wt
+				WHERE wt.user_id = $1 AND wt.active AND wt.team_id = ANY($2))`, targetID(r), teamIDs).Scan(&ok); err != nil || !ok {
+			respond(w, http.StatusForbidden, msg("Worker not in your scope"))
 			return
 		}
 	}
 	rows, err := db.Query(r.Context(), `
-		SELECT day_of_week, start_time, end_time FROM preferred_times
+		SELECT id, day_of_week, start_time, end_time FROM preferred_times
 		WHERE user_id = $1 ORDER BY day_of_week, start_time`, targetID(r))
 	if err != nil {
 		respond500(w, "Worker Preferences Error", err, false)
@@ -34,13 +33,13 @@ func workerPreferences(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	prefs := []map[string]any{}
 	for rows.Next() {
-		var dow int
+		var id, dow int
 		var start, end string
-		if err := rows.Scan(&dow, &start, &end); err != nil {
+		if err := rows.Scan(&id, &dow, &start, &end); err != nil {
 			respond500(w, "Worker Preferences Error", err, false)
 			return
 		}
-		prefs = append(prefs, map[string]any{"dayOfWeek": dow, "startTime": start, "endTime": end})
+		prefs = append(prefs, map[string]any{"id": id, "dayOfWeek": dow, "startTime": start, "endTime": end})
 	}
 	respond(w, http.StatusOK, map[string]any{"preferences": prefs})
 }
@@ -49,7 +48,7 @@ func workerPreferences(w http.ResponseWriter, r *http.Request) {
 func myPreferences(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	rows, err := db.Query(r.Context(), `
-		SELECT day_of_week, start_time, end_time FROM preferred_times
+		SELECT id, day_of_week, start_time, end_time FROM preferred_times
 		WHERE user_id = $1 ORDER BY day_of_week, start_time`, u.ID)
 	if err != nil {
 		respond500(w, "My Preferences Error", err, false)
@@ -58,13 +57,13 @@ func myPreferences(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 	prefs := []map[string]any{}
 	for rows.Next() {
-		var dow int
+		var id, dow int
 		var start, end string
-		if err := rows.Scan(&dow, &start, &end); err != nil {
+		if err := rows.Scan(&id, &dow, &start, &end); err != nil {
 			respond500(w, "My Preferences Error", err, false)
 			return
 		}
-		prefs = append(prefs, map[string]any{"dayOfWeek": dow, "startTime": start, "endTime": end})
+		prefs = append(prefs, map[string]any{"id": id, "dayOfWeek": dow, "startTime": start, "endTime": end})
 	}
 	respond(w, http.StatusOK, map[string]any{"preferences": prefs})
 }

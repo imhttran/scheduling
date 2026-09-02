@@ -48,7 +48,7 @@ func workerSettings(ctx context.Context, userID int) (string, int, error) {
 }
 
 // workerWeekHours is the worker's total assigned hours for the week containing
-// ref, across all jobs and departments.
+// ref, across all jobs and teams.
 func workerWeekHours(ctx context.Context, userID int, ref time.Time) (float64, error) {
 	var hours float64
 	monday := weekMondayOf(ref)

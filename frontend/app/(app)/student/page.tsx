@@ -167,7 +167,7 @@ export default function StudentPage() {
       sortable: true,
       render: (s) => fmtTime(s.endTime),
     },
-    { key: "departmentName", label: "Department", sortable: true },
+    { key: "teamName", label: "Team", sortable: true },
     { label: "", render: action },
   ];
 
@@ -253,7 +253,7 @@ export default function StudentPage() {
               grid={workqueueGrid}
               columns={workqueueColumns}
               getRowKey={(s) => s.id}
-              emptyText="No open shifts in your department."
+              emptyText="No open shifts in your teams."
             />
           </div>
 
@@ -273,7 +273,7 @@ export default function StudentPage() {
               <DataGrid
                 grid={preferencesGrid}
                 columns={prefColumns}
-                getRowKey={(p) => p.dayOfWeek}
+                getRowKey={(p) => p.id}
               />
             )}
             <form className="add-user-form" onSubmit={handlePreference}>

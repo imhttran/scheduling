@@ -8,7 +8,7 @@ const HOUR_W = 60; // px per hour across the top
 const ROW_H = 40; // px per worker row
 
 // A shift as the resource calendar needs it. Callers may extend this type with
-// extra fields (e.g. departmentName) and read them inside renderShift.
+// extra fields (e.g. teamName) and read them inside renderShift.
 export type ResourceShift = {
   id: number;
   date: string;

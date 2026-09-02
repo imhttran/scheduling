@@ -18,8 +18,14 @@ func main() {
 	loadConfig()
 
 	ctx := context.Background()
-	var err error
-	db, err = pgxpool.New(ctx, cfg.DatabaseURL)
+	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("Failed to parse DATABASE_URL: %v", err)
+	}
+	// The DSN should carry search_path=scheduling; enforce it per connection
+	// too so a DSN that omits it can't silently put tables in public.
+	poolCfg.ConnConfig.RuntimeParams["search_path"] = "scheduling"
+	db, err = pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
@@ -30,6 +36,7 @@ func main() {
 	seedFromCSV(ctx)
 	seedExtraData(ctx)
 	seedSecuritySchedules(ctx)
+	seedDefaultJobSchedules(ctx)
 	seedWorkqueue(ctx)
 	seedStudentAvailability(ctx)
 	seedStaff(ctx)
@@ -50,6 +57,11 @@ func main() {
 
 // One embedded SQL migration, applied at boot and recorded in schema_migrations.
 func migrate(ctx context.Context) {
+	// Objects live in the `scheduling` schema — create it before anything else
+	// (schema_migrations itself lives there).
+	if _, err := db.Exec(ctx, `CREATE SCHEMA IF NOT EXISTS scheduling`); err != nil {
+		log.Fatalf("migrate: %v", err)
+	}
 	if _, err := db.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
 			version    INTEGER PRIMARY KEY,
@@ -113,8 +125,8 @@ func seedDevAdmin(ctx context.Context) {
 	const devAdminPassword = "Password1234!"
 	var id int
 	err := db.QueryRow(ctx, `
-		INSERT INTO users (email, password, role, email_verified)
-		VALUES ($1, $2, 'admin', true)
+		INSERT INTO users (email, password, roles, email_verified)
+		VALUES ($1, $2, ARRAY['admin'], true)
 		ON CONFLICT (email) DO NOTHING
 		RETURNING id`,
 		devAdminEmail, hashPassword(devAdminPassword)).Scan(&id)

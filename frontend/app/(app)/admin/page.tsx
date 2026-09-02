@@ -8,7 +8,7 @@ import {
   type FormEvent,
 } from "react";
 import { API_BASE, callApi } from "@/lib/api";
-import { ROLES } from "@/lib/roles";
+import { ROLES, hasAnyRole } from "@/lib/roles";
 import { PageHeader } from "@/components/PageHeader";
 import { PageFooter } from "@/components/PageFooter";
 import { PageTitle } from "@/components/PageTitle";
@@ -17,25 +17,13 @@ import { Modal } from "@/components/Modal";
 import { JobModal, type JobInput } from "@/components/JobModal";
 import { useSortablePage } from "@/lib/pagination";
 import { DataGrid, type Column } from "@/components/DataGrid";
-import type { Department, Job } from "@/lib/types";
+import type { Department, Job, Team } from "@/lib/types";
 
-type Location = {
-  id: number;
-  name: string;
-  abbreviation?: string | null;
-  address?: string | null;
-  address2?: string | null;
-  city?: string | null;
-  state?: string | null;
-  zip?: string | null;
-  country?: string | null;
-  managerId?: number | null;
-  managerEmail?: string | null;
-};
 type User = {
   id: number;
   email: string;
   role: string;
+  roles: string[];
   disabled?: boolean;
   uid?: string | null;
   firstName?: string | null;
@@ -50,21 +38,20 @@ type User = {
   communicationPreference?: string | null;
 };
 
-type LocationModal =
-  { mode: "create" } | { mode: "edit"; loc: Location } | null;
 type DepartmentModal =
   { mode: "create" } | { mode: "edit"; dept: Department } | null;
+type TeamModal = { mode: "create" } | { mode: "edit"; team: Team } | null;
 type JobModal = { mode: "create" } | { mode: "edit"; job: Job } | null;
 type UserModal = { mode: "create" } | { mode: "edit"; user: User } | null;
 
 function userValue(u: User, key: string) {
   return u[key as keyof User];
 }
-function locValue(l: Location, key: string) {
-  return l[key as keyof Location];
-}
 function deptValue(d: Department, key: string) {
   return d[key as keyof Department];
+}
+function teamValue(d: Team, key: string) {
+  return d[key as keyof Team];
 }
 function jobValue(j: Job, key: string) {
   if (key === "workers") return j.currentWorkers;
@@ -75,13 +62,13 @@ function jobValue(j: Job, key: string) {
 export default function AdminPage() {
   const [token, setToken] = useState<string | null>(null);
   const [email, setEmail] = useState("");
-  const [locations, setLocations] = useState<Location[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [search, setSearch] = useState("");
-  const [locationModal, setLocationModal] = useState<LocationModal>(null);
   const [departmentModal, setDepartmentModal] = useState<DepartmentModal>(null);
+  const [teamModal, setTeamModal] = useState<TeamModal>(null);
   const [jobModal, setJobModal] = useState<JobModal>(null);
   const [userModal, setUserModal] = useState<UserModal>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -92,20 +79,20 @@ export default function AdminPage() {
         (u) =>
           (u.email ?? "").toLowerCase().includes(q) ||
           (u.uid ?? "").toLowerCase().includes(q) ||
-          (u.role ?? "").toLowerCase().includes(q),
+          (u.roles ?? []).join(",").toLowerCase().includes(q),
       )
     : users;
 
   const usersGrid = useSortablePage<User>(filteredUsers, userValue, "email");
-  const locationsGrid = useSortablePage<Location>(locations, locValue, "name");
   const departmentsGrid = useSortablePage<Department>(
     departments,
     deptValue,
     "name",
   );
+  const teamsGrid = useSortablePage<Team>(teams, teamValue, "name");
   const jobsGrid = useSortablePage<Job>(jobs, jobValue, "name");
 
-  const locationColumns: Column<Location>[] = [
+  const departmentColumns: Column<Department>[] = [
     { key: "name", label: "Name", sortable: true },
     {
       key: "abbreviation",
@@ -138,17 +125,17 @@ export default function AdminPage() {
         <select
           value={l.managerId ?? ""}
           onChange={(e) => {
-            const managerId = e.target.value;
-            if (managerId) {
-              act(`/api/managers/${managerId}/assign`, "POST", {
-                locationId: l.id,
+            const userId = e.target.value;
+            if (userId) {
+              act(`/api/departments/${l.id}/manager`, "PATCH", {
+                userId: Number(userId),
               });
             }
           }}
         >
           <option value="">—</option>
           {users
-            .filter((u) => u.role === "manager" || u.role === "scheduler")
+            .filter((u) => hasAnyRole(u.roles, "manager"))
             .map((m) => (
               <option key={m.id} value={m.id}>
                 {m.email}
@@ -162,7 +149,7 @@ export default function AdminPage() {
       render: (l) => (
         <button
           type="button"
-          onClick={() => setLocationModal({ mode: "edit", loc: l })}
+          onClick={() => setDepartmentModal({ mode: "edit", dept: l })}
         >
           Edit
         </button>
@@ -170,21 +157,21 @@ export default function AdminPage() {
     },
   ];
 
-  const departmentColumns: Column<Department>[] = [
+  const teamColumns: Column<Team>[] = [
     { key: "name", label: "Name", sortable: true },
     {
-      key: "departmentCode",
+      key: "teamCode",
       label: "Code",
       sortable: true,
-      render: (d) => d.departmentCode ?? "—",
+      render: (d) => d.teamCode ?? "—",
     },
-    { key: "locationName", label: "Location", sortable: true },
+    { key: "departmentName", label: "Department", sortable: true },
     {
       label: "",
       render: (d) => (
         <button
           type="button"
-          onClick={() => setDepartmentModal({ mode: "edit", dept: d })}
+          onClick={() => setTeamModal({ mode: "edit", team: d })}
         >
           Edit
         </button>
@@ -194,8 +181,8 @@ export default function AdminPage() {
 
   const adminJobColumns: Column<Job>[] = [
     { key: "name", label: "Name", sortable: true },
+    { key: "teamName", label: "Team", sortable: true },
     { key: "departmentName", label: "Department", sortable: true },
-    { key: "locationName", label: "Location", sortable: true },
     {
       key: "workers",
       label: "Workers",
@@ -230,7 +217,12 @@ export default function AdminPage() {
   const userColumns: Column<User>[] = [
     { key: "email", label: "Email", sortable: true },
     { key: "uid", label: "UID", render: (u) => u.uid ?? "—" },
-    { key: "role", label: "Role", sortable: true },
+    {
+      key: "role",
+      label: "Roles",
+      sortable: true,
+      render: (u) => (u.roles ?? []).join(", "),
+    },
     {
       key: "disabled",
       label: "Status",
@@ -271,17 +263,17 @@ export default function AdminPage() {
   ];
 
   const load = useCallback(async (authToken: string) => {
-    const [l, d, j, u] = await Promise.all([
-      callApi<{ locations: Location[] }>(
+    const [d, t, j, u] = await Promise.all([
+      callApi<{ departments: Department[] }>(
         authToken,
-        "/api/locations",
+        "/api/departments",
         "GET",
         undefined,
         false,
       ),
-      callApi<{ departments: Department[] }>(
+      callApi<{ teams: Team[] }>(
         authToken,
-        "/api/departments",
+        "/api/teams",
         "GET",
         undefined,
         false,
@@ -295,8 +287,8 @@ export default function AdminPage() {
         false,
       ),
     ]);
-    if (l) setLocations(l.locations ?? []);
     if (d) setDepartments(d.departments ?? []);
+    if (t) setTeams(t.teams ?? []);
     if (j) setJobs(j.jobs ?? []);
     if (u) setUsers(u.users ?? []);
   }, []);
@@ -338,26 +330,11 @@ export default function AdminPage() {
     })();
   };
 
-  const saveLocation = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const body: Record<string, unknown> = {};
-    for (const [k, v] of data.entries()) body[k] = v;
-    if (locationModal?.mode === "edit") {
-      act(`/api/locations/${locationModal.loc.id}`, "PATCH", body);
-    } else {
-      act("/api/locations", "POST", body);
-    }
-    setLocationModal(null);
-  };
-
   const saveDepartment = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const body: Record<string, unknown> = {};
     for (const [k, v] of data.entries()) body[k] = v;
-    // Backend expects a number; FormData yields a string.
-    body.locationId = Number(data.get("locationId"));
     if (departmentModal?.mode === "edit") {
       act(`/api/departments/${departmentModal.dept.id}`, "PATCH", body);
     } else {
@@ -366,10 +343,25 @@ export default function AdminPage() {
     setDepartmentModal(null);
   };
 
+  const saveTeam = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const body: Record<string, unknown> = {};
+    for (const [k, v] of data.entries()) body[k] = v;
+    // Backend expects a number; FormData yields a string.
+    body.departmentId = Number(data.get("departmentId"));
+    if (teamModal?.mode === "edit") {
+      act(`/api/teams/${teamModal.team.id}`, "PATCH", body);
+    } else {
+      act("/api/teams", "POST", body);
+    }
+    setTeamModal(null);
+  };
+
   const saveJob = (data: JobInput) => {
     const body: Record<string, unknown> = {
       name: data.name,
-      departmentId: data.departmentId,
+      teamId: data.teamId,
       optimalWorkers: data.optimalWorkers,
       schedules: data.schedules.map((s) => ({
         dayOfWeek: s.dayOfWeek,
@@ -396,7 +388,7 @@ export default function AdminPage() {
     for (const [k, v] of data.entries()) body[k] = v;
     if (userModal?.mode === "edit") {
       act(`/api/users/${userModal.user.id}/role`, "PATCH", {
-        role: body.role,
+        roles: data.getAll("role"),
         uid: body.uid,
       });
       act(`/api/users/${userModal.user.id}/profile`, "PATCH", {
@@ -478,34 +470,16 @@ export default function AdminPage() {
 
       <div className="with-sidebar">
         <nav className="sidebar">
-          <a href="#locations">Locations</a>
           <a href="#departments">Departments</a>
+          <a href="#teams">Teams</a>
           <a href="#jobs">Jobs</a>
           <a href="#access-control">Access Control</a>
+          <a href="/audit">Audit Report</a>
           <a className="logout-link" href="/" onClick={logout}>
             Logout
           </a>
         </nav>
         <div className="dashboard-card">
-          <div className="user-list-section" id="locations">
-            <div className="section-title-row">
-              <h2>Locations</h2>
-              <button
-                type="button"
-                className="login-button add-button"
-                onClick={() => setLocationModal({ mode: "create" })}
-              >
-                Add Location
-              </button>
-            </div>
-            <DataGrid
-              grid={locationsGrid}
-              columns={locationColumns}
-              getRowKey={(l) => l.id}
-              emptyText="No locations yet."
-            />
-          </div>
-
           <div className="user-list-section" id="departments">
             <div className="section-title-row">
               <h2>Departments</h2>
@@ -520,8 +494,27 @@ export default function AdminPage() {
             <DataGrid
               grid={departmentsGrid}
               columns={departmentColumns}
-              getRowKey={(d) => d.id}
+              getRowKey={(l) => l.id}
               emptyText="No departments yet."
+            />
+          </div>
+
+          <div className="user-list-section" id="teams">
+            <div className="section-title-row">
+              <h2>Teams</h2>
+              <button
+                type="button"
+                className="login-button add-button"
+                onClick={() => setTeamModal({ mode: "create" })}
+              >
+                Add Team
+              </button>
+            </div>
+            <DataGrid
+              grid={teamsGrid}
+              columns={teamColumns}
+              getRowKey={(d) => d.id}
+              emptyText="No teams yet."
             />
           </div>
 
@@ -538,7 +531,7 @@ export default function AdminPage() {
             </div>
             <p className="section-hint">
               A job is a position a worker/student is qualified to do, within a
-              department at a location.
+              team in a department.
             </p>
             <DataGrid
               grid={jobsGrid}
@@ -579,109 +572,6 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {locationModal && (
-        <Modal
-          title={
-            locationModal.mode === "edit" ? "Edit Location" : "Add Location"
-          }
-          onClose={() => setLocationModal(null)}
-        >
-          <form className="modal-form" onSubmit={saveLocation}>
-            <input
-              type="text"
-              name="name"
-              placeholder="Name"
-              required
-              defaultValue={
-                locationModal.mode === "edit" ? locationModal.loc.name : ""
-              }
-            />
-            <input
-              type="text"
-              name="abbreviation"
-              placeholder="Abbreviation"
-              defaultValue={
-                locationModal.mode === "edit"
-                  ? (locationModal.loc.abbreviation ?? "")
-                  : ""
-              }
-            />
-            <input
-              type="text"
-              name="address"
-              placeholder="Address"
-              defaultValue={
-                locationModal.mode === "edit"
-                  ? (locationModal.loc.address ?? "")
-                  : ""
-              }
-            />
-            <input
-              type="text"
-              name="address2"
-              placeholder="Address 2"
-              defaultValue={
-                locationModal.mode === "edit"
-                  ? (locationModal.loc.address2 ?? "")
-                  : ""
-              }
-            />
-            <input
-              type="text"
-              name="city"
-              placeholder="City"
-              defaultValue={
-                locationModal.mode === "edit"
-                  ? (locationModal.loc.city ?? "")
-                  : ""
-              }
-            />
-            <input
-              type="text"
-              name="state"
-              placeholder="State"
-              defaultValue={
-                locationModal.mode === "edit"
-                  ? (locationModal.loc.state ?? "")
-                  : ""
-              }
-            />
-            <input
-              type="text"
-              name="zip"
-              placeholder="Zip"
-              defaultValue={
-                locationModal.mode === "edit"
-                  ? (locationModal.loc.zip ?? "")
-                  : ""
-              }
-            />
-            <input
-              type="text"
-              name="country"
-              placeholder="Country"
-              defaultValue={
-                locationModal.mode === "edit"
-                  ? (locationModal.loc.country ?? "")
-                  : ""
-              }
-            />
-            <div className="modal-actions">
-              <button
-                type="button"
-                className="cancel-button"
-                onClick={() => setLocationModal(null)}
-              >
-                Cancel
-              </button>
-              <button type="submit" className="login-button">
-                Save
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
       {departmentModal && (
         <Modal
           title={
@@ -695,7 +585,7 @@ export default function AdminPage() {
             <input
               type="text"
               name="name"
-              placeholder="Department name"
+              placeholder="Name"
               required
               defaultValue={
                 departmentModal.mode === "edit" ? departmentModal.dept.name : ""
@@ -703,30 +593,74 @@ export default function AdminPage() {
             />
             <input
               type="text"
-              name="departmentCode"
-              placeholder="Code (max 20)"
-              maxLength={20}
+              name="abbreviation"
+              placeholder="Abbreviation"
               defaultValue={
                 departmentModal.mode === "edit"
-                  ? (departmentModal.dept.departmentCode ?? "")
+                  ? (departmentModal.dept.abbreviation ?? "")
                   : ""
               }
             />
-            <select
-              name="locationId"
-              required
+            <input
+              type="text"
+              name="address"
+              placeholder="Address"
               defaultValue={
                 departmentModal.mode === "edit"
-                  ? departmentModal.dept.locationId
+                  ? (departmentModal.dept.address ?? "")
                   : ""
               }
-            >
-              {locations.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
+            />
+            <input
+              type="text"
+              name="address2"
+              placeholder="Address 2"
+              defaultValue={
+                departmentModal.mode === "edit"
+                  ? (departmentModal.dept.address2 ?? "")
+                  : ""
+              }
+            />
+            <input
+              type="text"
+              name="city"
+              placeholder="City"
+              defaultValue={
+                departmentModal.mode === "edit"
+                  ? (departmentModal.dept.city ?? "")
+                  : ""
+              }
+            />
+            <input
+              type="text"
+              name="state"
+              placeholder="State"
+              defaultValue={
+                departmentModal.mode === "edit"
+                  ? (departmentModal.dept.state ?? "")
+                  : ""
+              }
+            />
+            <input
+              type="text"
+              name="zip"
+              placeholder="Zip"
+              defaultValue={
+                departmentModal.mode === "edit"
+                  ? (departmentModal.dept.zip ?? "")
+                  : ""
+              }
+            />
+            <input
+              type="text"
+              name="country"
+              placeholder="Country"
+              defaultValue={
+                departmentModal.mode === "edit"
+                  ? (departmentModal.dept.country ?? "")
+                  : ""
+              }
+            />
             <div className="modal-actions">
               <button
                 type="button"
@@ -743,10 +677,63 @@ export default function AdminPage() {
         </Modal>
       )}
 
+      {teamModal && (
+        <Modal
+          title={teamModal.mode === "edit" ? "Edit Team" : "Add Team"}
+          onClose={() => setTeamModal(null)}
+        >
+          <form className="modal-form" onSubmit={saveTeam}>
+            <input
+              type="text"
+              name="name"
+              placeholder="Team name"
+              required
+              defaultValue={
+                teamModal.mode === "edit" ? teamModal.team.name : ""
+              }
+            />
+            <input
+              type="text"
+              name="teamCode"
+              placeholder="Code (max 20)"
+              maxLength={20}
+              defaultValue={
+                teamModal.mode === "edit" ? (teamModal.team.teamCode ?? "") : ""
+              }
+            />
+            <select
+              name="departmentId"
+              required
+              defaultValue={
+                teamModal.mode === "edit" ? teamModal.team.departmentId : ""
+              }
+            >
+              {departments.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => setTeamModal(null)}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="login-button">
+                Save
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
       {jobModal && (
         <JobModal
           job={jobModal.mode === "edit" ? jobModal.job : null}
-          departments={departments}
+          teams={teams}
           onSave={saveJob}
           onClose={() => setJobModal(null)}
         />
@@ -761,13 +748,19 @@ export default function AdminPage() {
             {userModal.mode === "edit" ? (
               <>
                 <p className="section-hint">{userModal.user.email}</p>
-                <select name="role" required defaultValue={userModal.user.role}>
+                <div className="role-picker">
                   {ROLES.map((r) => (
-                    <option key={r} value={r}>
+                    <label key={r}>
+                      <input
+                        type="checkbox"
+                        name="role"
+                        value={r}
+                        defaultChecked={userModal.user.roles?.includes(r)}
+                      />
                       {r}
-                    </option>
+                    </label>
                   ))}
-                </select>
+                </div>
                 <input
                   type="text"
                   name="uid"

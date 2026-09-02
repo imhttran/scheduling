@@ -1,4 +1,4 @@
-name,department,location,optimal_workers
+name,team,department,optimal_workers
 Dishwashing,dining,Jester,3
 Front Desk,residential life,Jester,2
 Maintenance,facility,Kin Solving,3

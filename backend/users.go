@@ -14,7 +14,7 @@ func listUsers(w http.ResponseWriter, r *http.Request) {
 	// Staff sees everyone except admin accounts — admin accounts aren't theirs
 	// to manage. Admin sees everyone.
 	query := `
-		SELECT u.id, u.email, u.uid, u.role, u.email_verified, u.disabled, u.created_at,
+		SELECT u.id, u.email, u.uid, u.role, u.roles, u.email_verified, u.disabled, u.created_at,
 		       p.first_name, p.last_name, p.address, p.address2, p.city, p.state,
 		       p.zip, p.country, p.phone, p.communication_preference
 		FROM users u
@@ -33,12 +33,13 @@ func listUsers(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id int
 		var email, role string
+		var userRoles []string
 		var verified, disabled bool
 		var createdAt time.Time
 		var firstName, lastName, address, city, state, zip, country, phone, commPref *string
 		var address2 *string
 		var uid *string
-		if err := rows.Scan(&id, &email, &uid, &role, &verified, &disabled, &createdAt,
+		if err := rows.Scan(&id, &email, &uid, &role, &userRoles, &verified, &disabled, &createdAt,
 			&firstName, &lastName, &address, &address2, &city, &state,
 			&zip, &country, &phone, &commPref); err != nil {
 			respond500(w, "List Users Error", err, false)
@@ -48,6 +49,7 @@ func listUsers(w http.ResponseWriter, r *http.Request) {
 			"id":                      id,
 			"email":                   email,
 			"role":                    role,
+			"roles":                   userRoles,
 			"emailVerified":           verified,
 			"disabled":                disabled,
 			"createdAt":               createdAt,
@@ -122,7 +124,7 @@ func adminCreateUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Manager-only: creates a worker (student or staff) in the manager's location.
+// Manager-only: creates a worker (student or staff) in the manager's scope.
 // The worker is verified (the manager vouches) and forced to change their
 // password on first login.
 func createWorker(w http.ResponseWriter, r *http.Request) {
@@ -153,26 +155,15 @@ func createWorker(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, msg("firstName and lastName are required"))
 		return
 	}
-	// The job must be in the caller's location (non-admin).
-	if !hasRole(currentUser(r).Role, "admin") {
-		locID, err := managerLocationID(r.Context(), currentUser(r).ID)
-		if err != nil {
-			respond500(w, "Create Worker Error", err, false)
-			return
-		}
-		var ok bool
-		if err := db.QueryRow(r.Context(),
-			`SELECT EXISTS (SELECT 1 FROM jobs j JOIN departments d ON d.id = j.department_id WHERE j.id = $1 AND d.location_id = $2)`,
-			body.JobID, locID).Scan(&ok); err != nil || !ok {
-			respond(w, http.StatusForbidden, msg("Job not in your location"))
-			return
-		}
+	// The job must be in the caller's scope (non-admin).
+	if !jobInCallerScope(w, r, body.JobID) {
+		return
 	}
 	var id int
 	var email, role string
 	err := db.QueryRow(r.Context(), `
-		INSERT INTO users (email, password, role, email_verified, must_change_password)
-		VALUES ($1, $2, $3, true, true)
+		INSERT INTO users (email, password, roles, email_verified, must_change_password)
+		VALUES ($1, $2, ARRAY[$3], true, true)
 		RETURNING id, email, role`,
 		body.Email, hashPassword(body.Password), body.Role).
 		Scan(&id, &email, &role)
@@ -192,11 +183,20 @@ func createWorker(w http.ResponseWriter, r *http.Request) {
 		respond500(w, "Create Worker Error", err, true)
 		return
 	}
-	// Assign the job so the worker sees the workqueue.
+	// Assign the job so the worker sees the workqueue, and grant membership in
+	// the job's team.
 	if _, err := db.Exec(r.Context(), `
 		INSERT INTO student_jobs (user_id, job_id, min_hours, max_hours)
 		VALUES ($1, $2, $3, $4)`,
 		id, body.JobID, body.MinHours, body.MaxHours); err != nil {
+		respond500(w, "Create Worker Error", err, true)
+		return
+	}
+	if _, err := db.Exec(r.Context(), `
+		INSERT INTO worker_teams (user_id, team_id, active)
+		SELECT $1, j.team_id, true FROM jobs j WHERE j.id = $2
+		ON CONFLICT (user_id, team_id) DO UPDATE SET active = true`,
+		id, body.JobID); err != nil {
 		respond500(w, "Create Worker Error", err, true)
 		return
 	}
@@ -274,16 +274,29 @@ func patchVerification(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Admin-only: changes a user's role. Blocks self-demotion so an admin can't
-// lock themselves (and potentially every other admin) out of admin routes.
+// Admin-only: changes a user's role set. Accepts either `roles` (array — the
+// admin page multi-select) or a single `role` (back-compat). Blocks self-edit
+// so an admin can't lock themselves (and potentially every other admin) out
+// of admin routes.
 func patchRole(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Role string `json:"role"`
-		UID  string `json:"uid"`
+		Role  string   `json:"role"`
+		Roles []string `json:"roles"`
+		UID   string   `json:"uid"`
 	}
 	decodeJSON(r, &body)
-	if !isValidRole(body.Role) {
-		respond(w, http.StatusBadRequest, msg("role must be one of: student, staff, manager, scheduler, admin"))
+	newRoles := body.Roles
+	if len(newRoles) == 0 && body.Role != "" {
+		newRoles = []string{body.Role}
+	}
+	for _, role := range newRoles {
+		if !isValidRole(role) {
+			respond(w, http.StatusBadRequest, msg("role must be one of: student, staff, manager, admin"))
+			return
+		}
+	}
+	if len(newRoles) == 0 {
+		respond(w, http.StatusBadRequest, msg("at least one role is required"))
 		return
 	}
 	if len(body.UID) > 20 {
@@ -294,11 +307,12 @@ func patchRole(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, msg("Cannot change your own role"))
 		return
 	}
+	roles := normalizeRoles(newRoles)
 	var id int
 	var email, role string
 	err := db.QueryRow(r.Context(), `
-		UPDATE users SET role = $1, uid = NULLIF($3, '') WHERE id = $2
-		RETURNING id, email, role`, body.Role, targetID(r), body.UID).
+		UPDATE users SET roles = $1, uid = NULLIF($3, '') WHERE id = $2
+		RETURNING id, email, role`, roles, targetID(r), body.UID).
 		Scan(&id, &email, &role)
 	if errors.Is(err, pgx.ErrNoRows) {
 		respond(w, http.StatusNotFound, msg("User not found"))
@@ -311,7 +325,7 @@ func patchRole(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, map[string]any{
 		"success": true,
 		"message": "User role updated",
-		"user":    map[string]any{"id": id, "email": email, "role": role},
+		"user":    map[string]any{"id": id, "email": email, "role": role, "roles": roles},
 	})
 }
 

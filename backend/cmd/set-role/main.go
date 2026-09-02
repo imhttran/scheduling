@@ -12,9 +12,9 @@ import (
 )
 
 // Mirrors common/roles.js.
-var roles = []string{"student", "staff", "manager", "scheduler", "admin"}
+var roles = []string{"student", "staff", "manager", "admin"}
 
-const defaultDatabaseURL = "postgres://postgres:postgres@localhost:5432/go_template?sslmode=disable"
+const defaultDatabaseURL = "postgres://postgres:postgres@localhost:5432/go_template?sslmode=disable&search_path=scheduling"
 
 func main() {
 	if len(os.Args) != 3 || !validRole(os.Args[2]) {
@@ -28,7 +28,13 @@ func main() {
 		dsn = defaultDatabaseURL
 	}
 	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, dsn)
+	cfg, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to parse DSN:", err)
+		os.Exit(1)
+	}
+	cfg.RuntimeParams["search_path"] = "scheduling"
+	conn, err := pgx.ConnectConfig(ctx, cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to set role:", err)
 		os.Exit(1)
@@ -45,7 +51,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "No user found with email %s\n", email)
 		os.Exit(1)
 	}
-	if _, err := conn.Exec(ctx, `UPDATE users SET role = $1 WHERE email = $2`, role, email); err != nil {
+	if _, err := conn.Exec(ctx, `UPDATE users SET roles = ARRAY[$1] WHERE email = $2`, role, email); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to set role:", err)
 		os.Exit(1)
 	}

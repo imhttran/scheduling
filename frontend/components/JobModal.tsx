@@ -16,7 +16,7 @@ export type JobHolidayInput = {
 export type JobInput = {
   id?: number;
   name: string;
-  departmentId: number;
+  teamId: number;
   optimalWorkers: number;
   schedules: JobScheduleInput[];
   holidays: JobHolidayInput[];
@@ -44,19 +44,17 @@ const DEFAULT_SCHEDULES: Record<
 // holiday lists can be added/removed before submitting.
 export function JobModal({
   job,
-  departments,
+  teams,
   onSave,
   onClose,
 }: {
   job: JobInput | null;
-  departments: { id: number; name: string; locationName: string }[];
+  teams: { id: number; name: string; departmentName: string }[];
   onSave: (data: JobInput) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState(job?.name ?? "");
-  const [departmentId, setDepartmentId] = useState<number>(
-    job?.departmentId ?? 0,
-  );
+  const [teamId, setTeamId] = useState<number>(job?.teamId ?? 0);
   const [optimalWorkers, setOptimalWorkers] = useState(
     job?.optimalWorkers ?? 1,
   );
@@ -108,7 +106,7 @@ export function JobModal({
     onSave({
       ...(job?.id ? { id: job.id } : {}),
       name: name.trim(),
-      departmentId,
+      teamId,
       optimalWorkers: optimalWorkers || 1,
       schedules: schedules.filter((s): s is JobScheduleInput => s !== null),
       holidays,
@@ -127,17 +125,17 @@ export function JobModal({
           onChange={(e) => setName(e.target.value)}
         />
         <select
-          name="departmentId"
+          name="teamId"
           required
-          value={departmentId}
-          onChange={(e) => setDepartmentId(Number(e.target.value))}
+          value={teamId}
+          onChange={(e) => setTeamId(Number(e.target.value))}
         >
           <option value={0} disabled>
-            Select department
+            Select team
           </option>
-          {departments.map((d) => (
+          {teams.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.name} ({d.locationName})
+              {d.name} ({d.departmentName})
             </option>
           ))}
         </select>

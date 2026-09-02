@@ -7,7 +7,7 @@ export type Shift = {
   date: string;
   startTime: string;
   endTime: string;
-  departmentName: string;
+  teamName: string;
   status?: string;
   assignedUserId?: number | null;
   assignedEmail?: string | null;
@@ -26,6 +26,7 @@ export type Request = {
 };
 
 export type Preference = {
+  id: number;
   dayOfWeek: number;
   startTime: string;
   endTime: string;
@@ -43,13 +44,15 @@ export type JobHoliday = {
   reason?: string | null;
 };
 
+// A job sits in a team, which sits in a department — responses carry both
+// levels.
 export type Job = {
   id: number;
   name: string;
+  teamId: number;
+  teamName: string;
   departmentId: number;
   departmentName: string;
-  locationId: number;
-  locationName: string;
   optimalWorkers: number;
   currentWorkers: number;
   weeklyHours: number;
@@ -57,10 +60,37 @@ export type Job = {
   holidays: JobHoliday[];
 };
 
+// A department is a managed site (with an assigned manager); teams are the
+// working groups inside it.
 export type Department = {
   id: number;
   name: string;
-  locationId: number;
-  locationName: string;
-  departmentCode?: string | null;
+  abbreviation?: string | null;
+  address?: string | null;
+  address2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  country?: string | null;
+  managerId?: number | null;
+};
+
+export type Team = {
+  id: number;
+  name: string;
+  teamCode?: string | null;
+  departmentId: number;
+  departmentName: string;
+};
+
+export type AuditEntry = {
+  id: number;
+  actorId?: number | null;
+  actorEmail?: string | null;
+  action: string;
+  entityType: string;
+  entityId?: number | null;
+  teamName?: string | null;
+  details?: Record<string, unknown> | null;
+  createdAt: string;
 };

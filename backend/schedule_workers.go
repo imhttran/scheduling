@@ -30,60 +30,79 @@ func setDisabled(disabled bool) http.HandlerFunc {
 	}
 }
 
-// Admin assigns a manager to a location — the scope of everything they see.
-func assignManager(w http.ResponseWriter, r *http.Request) {
+// Admin sets a department's manager — the scope of everything they see.
+func assignDepartmentManager(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		LocationID int `json:"locationId"`
+		UserID int `json:"userId"`
 	}
 	decodeJSON(r, &body)
-	if body.LocationID == 0 {
-		respond(w, http.StatusBadRequest, msg("locationId required"))
+	if body.UserID == 0 {
+		respond(w, http.StatusBadRequest, msg("userId required"))
 		return
 	}
-	_, err := db.Exec(r.Context(), `
-		INSERT INTO manager_assignments (user_id, location_id)
-		VALUES ($1, $2)
-		ON CONFLICT (user_id) DO UPDATE SET location_id = $2`,
-		targetID(r), body.LocationID)
+	tag, err := db.Exec(r.Context(),
+		`UPDATE departments SET manager_id = $1 WHERE id = $2`, body.UserID, targetID(r))
 	if err != nil {
-		respond500(w, "Assign Manager Error", err, true)
+		respond500(w, "Assign Department Manager Error", err, true)
 		return
 	}
-	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Manager assigned to location"})
+	if tag.RowsAffected() == 0 {
+		respond(w, http.StatusNotFound, msg("Department not found"))
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Manager assigned to department"})
 }
 
-func listStudents(w http.ResponseWriter, r *http.Request) {
+// Admin sets a team's manager — the scope of everything they see.
+func assignTeamManager(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		UserID int `json:"userId"`
+	}
+	decodeJSON(r, &body)
+	if body.UserID == 0 {
+		respond(w, http.StatusBadRequest, msg("userId required"))
+		return
+	}
+	tag, err := db.Exec(r.Context(),
+		`UPDATE teams SET manager_id = $1 WHERE id = $2`, body.UserID, targetID(r))
+	if err != nil {
+		respond500(w, "Assign Team Manager Error", err, true)
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		respond(w, http.StatusNotFound, msg("Team not found"))
+		return
+	}
+	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Manager assigned to team"})
+}
+
+// Workers (students and staff) the caller may see: active members of the
+// caller's scope teams (admins see everyone). Job/hours info still comes from
+// student_jobs.
+func listWorkers(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	query := `
 		SELECT u.id, u.email, u.disabled, u.worker_type, COALESCE(u.hourly_limit, 0),
 		       COALESCE(up.first_name, ''), COALESCE(up.last_name, ''),
-		       sj.job_id, j.name, j.department_id, d.name, d.location_id,
+		       sj.job_id, j.name, j.team_id, t.name, t.department_id,
 		       sj.min_hours, sj.max_hours, sj.active
 		FROM users u
 		LEFT JOIN user_profiles up ON up.user_id = u.id
 		LEFT JOIN student_jobs sj ON sj.user_id = u.id
 		LEFT JOIN jobs j ON j.id = sj.job_id
-		LEFT JOIN departments d ON d.id = j.department_id
+		LEFT JOIN teams t ON t.id = j.team_id
 		WHERE u.role IN ('student','staff')`
 	args := []any{}
 	if !hasRole(u.Role, "admin") {
-		if u.Role == "scheduler" {
-			deptID, err := schedulerDepartmentID(r.Context(), u.ID)
-			if err != nil {
-				respond500(w, "List Students Error", err, false)
-				return
-			}
-			query += ` AND j.department_id = $1`
-			args = append(args, deptID)
-		} else {
-			locID, err := managerLocationID(r.Context(), u.ID)
-			if err != nil {
-				respond500(w, "List Students Error", err, false)
-				return
-			}
-			query += ` AND d.location_id = $1`
-			args = append(args, locID)
+		teamIDs, err := callerScopeTeamIDs(r.Context(), u.ID)
+		if err != nil {
+			respond500(w, "List Workers Error", err, false)
+			return
 		}
+		query += ` AND EXISTS (
+			SELECT 1 FROM worker_teams wt
+			WHERE wt.user_id = u.id AND wt.active AND wt.team_id = ANY($1))`
+		args = append(args, teamIDs)
 	}
 	query += ` ORDER BY u.email, j.name`
 	rows, err := db.Query(r.Context(), query, args...)
@@ -100,12 +119,12 @@ func listStudents(w http.ResponseWriter, r *http.Request) {
 		var email, workerType, firstName, lastName string
 		var disabled bool
 		var jobID *int
-		var jobName, deptName *string
-		var deptID, locID *int
+		var jobName, teamName *string
+		var teamID, deptID *int
 		var minH, maxH *int
 		var active *bool
-		if err := rows.Scan(&id, &email, &disabled, &workerType, &hourlyLimit, &firstName, &lastName, &jobID, &jobName, &deptID, &deptName, &locID, &minH, &maxH, &active); err != nil {
-			respond500(w, "List Students Error", err, false)
+		if err := rows.Scan(&id, &email, &disabled, &workerType, &hourlyLimit, &firstName, &lastName, &jobID, &jobName, &teamID, &teamName, &deptID, &minH, &maxH, &active); err != nil {
+			respond500(w, "List Workers Error", err, false)
 			return
 		}
 		row, ok := byID[id]
@@ -113,7 +132,7 @@ func listStudents(w http.ResponseWriter, r *http.Request) {
 			pol := workerPolicyFor(workerType, hourlyLimit)
 			used, err := workerWeekHours(r.Context(), id, time.Now())
 			if err != nil {
-				respond500(w, "List Students Error", err, false)
+				respond500(w, "List Workers Error", err, false)
 				return
 			}
 			row = map[string]any{
@@ -130,24 +149,24 @@ func listStudents(w http.ResponseWriter, r *http.Request) {
 		}
 		if jobID != nil {
 			row["jobs"] = append(row["jobs"].([]map[string]any), map[string]any{
-				"jobId": *jobID, "jobName": *jobName, "departmentId": *deptID,
-				"departmentName": *deptName, "locationId": *locID,
+				"jobId": *jobID, "jobName": *jobName, "teamId": *teamID,
+				"teamName": *teamName, "departmentId": *deptID,
 				"minHours": *minH, "maxHours": *maxH, "active": *active,
 			})
 		}
 	}
 	if err := rows.Err(); err != nil {
-		respond500(w, "List Students Error", err, false)
+		respond500(w, "List Workers Error", err, false)
 		return
 	}
-	students := make([]map[string]any, 0, len(order))
+	workers := make([]map[string]any, 0, len(order))
 	for _, id := range order {
-		students = append(students, byID[id])
+		workers = append(workers, byID[id])
 	}
-	respond(w, http.StatusOK, map[string]any{"students": students})
+	respond(w, http.StatusOK, map[string]any{"workers": workers})
 }
 
-func assignStudentJob(w http.ResponseWriter, r *http.Request) {
+func assignWorkerJob(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		JobID    int `json:"jobId"`
 		MinHours int `json:"minHours"`
@@ -159,19 +178,8 @@ func assignStudentJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !hasRole(currentUser(r).Role, "admin") {
-		locID, err := managerLocationID(r.Context(), currentUser(r).ID)
-		if err != nil {
-			respond500(w, "Assign Student Job Error", err, false)
-			return
-		}
-		var ok bool
-		if err := db.QueryRow(r.Context(),
-			`SELECT EXISTS (SELECT 1 FROM jobs j JOIN departments d ON d.id = j.department_id WHERE j.id = $1 AND d.location_id = $2)`,
-			body.JobID, locID).Scan(&ok); err != nil || !ok {
-			respond(w, http.StatusForbidden, msg("Job not in your location"))
-			return
-		}
+	if !jobInCallerScope(w, r, body.JobID) {
+		return
 	}
 	_, err := db.Exec(r.Context(), `
 		INSERT INTO student_jobs (user_id, job_id, min_hours, max_hours, active)
@@ -180,29 +188,44 @@ func assignStudentJob(w http.ResponseWriter, r *http.Request) {
 		SET min_hours = $3, max_hours = $4, active = true`,
 		targetID(r), body.JobID, body.MinHours, body.MaxHours)
 	if err != nil {
-		respond500(w, "Assign Student Job Error", err, true)
+		respond500(w, "Assign Worker Job Error", err, true)
 		return
 	}
-	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Student assigned to job"})
+	// Assigning a job grants team membership.
+	if _, err := db.Exec(r.Context(), `
+		INSERT INTO worker_teams (user_id, team_id, active)
+		SELECT $1, j.team_id, true FROM jobs j WHERE j.id = $2
+		ON CONFLICT (user_id, team_id) DO UPDATE SET active = true`,
+		targetID(r), body.JobID); err != nil {
+		respond500(w, "Assign Worker Job Error", err, true)
+		return
+	}
+	logAudit(r.Context(), currentUser(r).ID, "job.assigned", "job", body.JobID, jobTeam(r.Context(), body.JobID), map[string]any{
+		"workerId": targetID(r), "minHours": body.MinHours, "maxHours": body.MaxHours,
+	})
+	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Worker assigned to job"})
 }
 
-// Manager removes a student from a job (their qualification for it).
-func removeStudentJob(w http.ResponseWriter, r *http.Request) {
+// Manager removes a worker from a job (their qualification for it).
+func removeWorkerJob(w http.ResponseWriter, r *http.Request) {
 	tag, err := db.Exec(r.Context(),
 		`DELETE FROM student_jobs WHERE user_id = $1 AND job_id = $2`,
 		targetID(r), targetJobID(r))
 	if err != nil {
-		respond500(w, "Remove Student Job Error", err, false)
+		respond500(w, "Remove Worker Job Error", err, false)
 		return
 	}
 	if tag.RowsAffected() == 0 {
-		respond(w, http.StatusNotFound, msg("Student is not assigned to this job"))
+		respond(w, http.StatusNotFound, msg("Worker is not assigned to this job"))
 		return
 	}
-	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Student removed from job"})
+	logAudit(r.Context(), currentUser(r).ID, "job.removed", "job", targetJobID(r), jobTeam(r.Context(), targetJobID(r)), map[string]any{
+		"workerId": targetID(r),
+	})
+	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Worker removed from job"})
 }
 
-// Manager/scheduler sets a worker's classification (student/fulltime/hourly)
+// Manager sets a worker's classification (student/fulltime/hourly)
 // and, for hourly staff, their regular weekly-hour limit (under 40).
 func setWorkerDetails(w http.ResponseWriter, r *http.Request) {
 	var body struct {

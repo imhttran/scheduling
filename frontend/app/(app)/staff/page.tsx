@@ -130,7 +130,7 @@ export default function StaffPage() {
       sortable: true,
       render: (s) => fmtTime(s.endTime),
     },
-    { key: "departmentName", label: "Department", sortable: true },
+    { key: "teamName", label: "Team", sortable: true },
     { label: "", render: action },
   ];
 
@@ -215,7 +215,7 @@ export default function StaffPage() {
               grid={workqueueGrid}
               columns={workqueueColumns}
               getRowKey={(s) => s.id}
-              emptyText="No open shifts in your department."
+              emptyText="No open shifts in your teams."
             />
           </div>
 

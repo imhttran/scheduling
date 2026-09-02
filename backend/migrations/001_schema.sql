@@ -1,12 +1,33 @@
--- Full schema for the student work-schedule system. Applied at boot; recorded
--- in schema_migrations.
+-- Full schema for the scheduling system. Single greenfield migration — no
+-- back-compat: dev databases are wiped (manage.sh → 9) and re-applied from
+-- scratch. Objects live in the `scheduling` schema; DATABASE_URL must carry
+-- search_path=scheduling (the runner creates the schema if missing).
+
+CREATE SCHEMA IF NOT EXISTS scheduling;
+
+-- Highest-ranked held role. `roles` is the source of truth; `role` is a
+-- generated convenience column so rank-based queries (role <> 'admin',
+-- role IN ('student','staff'), ORDER BY role, ...) keep working.
+-- Ladder: student < staff < manager < admin.
+CREATE OR REPLACE FUNCTION top_role(roles TEXT[]) RETURNS TEXT
+LANGUAGE sql IMMUTABLE AS $$
+  SELECT r FROM unnest(roles) r
+  ORDER BY array_position(ARRAY['student','staff','manager','admin'], r) DESC NULLS LAST
+  LIMIT 1
+$$;
 
 CREATE TABLE IF NOT EXISTS users (
   id                  SERIAL PRIMARY KEY,
   email               TEXT NOT NULL UNIQUE,
   uid                 TEXT UNIQUE,
   password            TEXT NOT NULL,
-  role                TEXT NOT NULL DEFAULT 'student',
+  roles               TEXT[] NOT NULL DEFAULT ARRAY['student']::text[],
+  role                TEXT GENERATED ALWAYS AS (top_role(roles)) STORED,
+  -- How a worker's weekly hours are governed: 'student' | 'fulltime' | 'hourly'.
+  -- hourly_limit: manager-set regular weekly hours for an 'hourly' worker
+  -- (1..40, where 40 is the default). NULL means use the 40 default.
+  worker_type         TEXT NOT NULL DEFAULT 'student',
+  hourly_limit        INTEGER,
   email_verified      BOOLEAN NOT NULL DEFAULT false,
   must_change_password BOOLEAN NOT NULL DEFAULT false,
   disabled            BOOLEAN NOT NULL DEFAULT false,
@@ -78,11 +99,14 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ---- Student work-schedule system ----
--- The workqueue is the single source of truth for shifts; weekly_schedules is
--- a template the manager sets that generates the current week's assigned shifts.
+-- ---- Work-schedule system ----
+-- Hierarchy: department → teams → workers. Scope is a manager_id column on
+-- the entity being managed (no assignment side-tables): a department's
+-- manager oversees every team in it, a team's manager runs that team. A
+-- manager may hold several teams and/or departments (rows point at them).
 
-CREATE TABLE IF NOT EXISTS locations (
+-- Departments: the widest scoped group (was "locations" in older vocabulary).
+CREATE TABLE IF NOT EXISTS departments (
   id           SERIAL PRIMARY KEY,
   name         TEXT NOT NULL UNIQUE,
   abbreviation TEXT,
@@ -91,29 +115,32 @@ CREATE TABLE IF NOT EXISTS locations (
   city         TEXT,
   state        TEXT,
   zip          TEXT,
-  country      TEXT
+  country      TEXT,
+  manager_id   INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
 
-CREATE TABLE IF NOT EXISTS departments (
-  id             SERIAL PRIMARY KEY,
-  name           TEXT NOT NULL UNIQUE,
-  department_code TEXT,
-  location_id    INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE
-);
-
--- A student's department + min/max weekly hours. One row per student.
-CREATE TABLE IF NOT EXISTS student_assignments (
-  user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+-- Teams: the smallest scoped group (was "departments" in older vocabulary).
+-- The workqueue is the single source of truth for shifts; weekly_schedules is
+-- a template the manager sets that generates the current week's shifts.
+CREATE TABLE IF NOT EXISTS teams (
+  id            SERIAL PRIMARY KEY,
   department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-  min_hours     INTEGER NOT NULL DEFAULT 0,
-  max_hours     INTEGER NOT NULL DEFAULT 20,
-  active        BOOLEAN NOT NULL DEFAULT true
+  name          TEXT NOT NULL,
+  team_code     TEXT,
+  description   TEXT,
+  active        BOOLEAN NOT NULL DEFAULT true,
+  manager_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE (department_id, name)
 );
 
--- A manager's scope: everything in this location.
-CREATE TABLE IF NOT EXISTS manager_assignments (
-  user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE
+-- A worker's team membership — one row per team they belong to; a worker may
+-- be in several teams. Jobs (student_jobs) are the work-function layer on
+-- top; hour caps live there, not here.
+CREATE TABLE IF NOT EXISTS worker_teams (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  active  BOOLEAN NOT NULL DEFAULT true,
+  PRIMARY KEY (user_id, team_id)
 );
 
 -- Preset weekly template (0=Sunday..6=Saturday). Generates workqueue rows.
@@ -125,7 +152,7 @@ CREATE TABLE IF NOT EXISTS weekly_schedules (
   end_time    TIME NOT NULL
 );
 
--- Student's preferred days/times (informational, not enforced).
+-- Worker's preferred days/times (informational, not enforced).
 CREATE TABLE IF NOT EXISTS preferred_times (
   id          SERIAL PRIMARY KEY,
   user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -134,18 +161,42 @@ CREATE TABLE IF NOT EXISTS preferred_times (
   end_time    TIME NOT NULL
 );
 
--- All shifts. status: 'open' (available to pick) | 'assigned'.
-CREATE TABLE IF NOT EXISTS workqueue (
+-- A job is a position a worker is qualified to do, belonging to one team.
+CREATE TABLE IF NOT EXISTS jobs (
   id              SERIAL PRIMARY KEY,
-  department_id   INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-  date            DATE NOT NULL,
-  start_time      TIME NOT NULL,
-  end_time        TIME NOT NULL,
-  status          TEXT NOT NULL DEFAULT 'open',
+  name            TEXT NOT NULL,
+  team_id         INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  optimal_workers INTEGER NOT NULL DEFAULT 1,
+  UNIQUE (name, team_id)
+);
+
+-- A worker's qualifications: one row per job they hold, with per-job hour
+-- caps. Students cap at 20 hrs/wk across all jobs; staff per worker_type.
+CREATE TABLE IF NOT EXISTS student_jobs (
+  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  job_id    INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  min_hours INTEGER NOT NULL DEFAULT 0,
+  max_hours INTEGER NOT NULL DEFAULT 20,
+  active    BOOLEAN NOT NULL DEFAULT true,
+  PRIMARY KEY (user_id, job_id)
+);
+
+-- All shifts. status: 'open' (available to pick) | 'assigned'.
+-- parent_shift_id groups rows split from one original shift, so the calendar
+-- can reconstruct the full shift and show which blocks are taken.
+CREATE TABLE IF NOT EXISTS workqueue (
+  id               SERIAL PRIMARY KEY,
+  team_id          INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  job_id           INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
+  parent_shift_id  INTEGER REFERENCES workqueue(id) ON DELETE SET NULL,
+  date             DATE NOT NULL,
+  start_time       TIME NOT NULL,
+  end_time         TIME NOT NULL,
+  status           TEXT NOT NULL DEFAULT 'open',
   assigned_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
 
--- Student requests. type: 'miss' (return an assigned shift to the workqueue)
+-- Worker requests. type: 'miss' (return an assigned shift to the workqueue)
 -- | 'overflow' (pick a shift that exceeds max hours, needs manager override).
 CREATE TABLE IF NOT EXISTS schedule_requests (
   id           SERIAL PRIMARY KEY,
@@ -157,65 +208,20 @@ CREATE TABLE IF NOT EXISTS schedule_requests (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-
--- Job concept: a position a worker/student is qualified to do. A job belongs
--- to a department (the type of work); its location is the department's. A
--- student can hold multiple jobs (student_jobs), possibly in different
--- departments/locations. Replaces the single-department student_assignments.
-
-CREATE TABLE IF NOT EXISTS jobs (
-  id            SERIAL PRIMARY KEY,
-  name          TEXT NOT NULL,
-  department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-  UNIQUE (name, department_id)
-);
-
--- A student's qualifications: one row per job they're assigned to.
-CREATE TABLE IF NOT EXISTS student_jobs (
-  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  job_id    INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
-  min_hours INTEGER NOT NULL DEFAULT 0,
-  max_hours INTEGER NOT NULL DEFAULT 20,
-  active    BOOLEAN NOT NULL DEFAULT true,
-  PRIMARY KEY (user_id, job_id)
-);
-
--- Backfill: one default job per department (named after it), then migrate each
--- student's old single-department assignment into a student_jobs row.
-INSERT INTO jobs (name, department_id)
-SELECT name, id FROM departments;
-
-INSERT INTO student_jobs (user_id, job_id, min_hours, max_hours, active)
-SELECT sa.user_id, j.id, sa.min_hours, sa.max_hours, sa.active
-FROM student_assignments sa
-JOIN jobs j ON j.department_id = sa.department_id;
-
-DROP TABLE student_assignments;
-
-
--- Per-job staffing requirements. A job's operating hours are defined per day of
--- week (0=Sunday..6=Saturday); a day with no row means the job is closed that
--- day (weekend, holiday, etc.). The daily hour requirement is the span between
--- start_time and end_time; the weekly requirement is the sum across days.
-
-ALTER TABLE jobs ADD COLUMN IF NOT EXISTS optimal_workers INTEGER NOT NULL DEFAULT 1;
-
--- A job's daily operating hours. One row per day the job is open.
+-- A job's daily operating hours (0=Sunday..6=Saturday); a day with no row
+-- means the job is closed that day. Multiple shifts per day are allowed
+-- (24h coverage = three 8h blocks), so uniqueness includes start_time.
 CREATE TABLE IF NOT EXISTS job_schedules (
   id          SERIAL PRIMARY KEY,
   job_id      INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
   day_of_week INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
   start_time  TIME NOT NULL,
   end_time    TIME NOT NULL,
-  UNIQUE (job_id, day_of_week)
+  UNIQUE (job_id, day_of_week, start_time)
 );
 
-
--- Date-specific closures: a job closed on a particular calendar date, overriding
--- its weekly schedule (holidays, planned closings, etc.). The weekly hour
--- requirement is reduced by the hours of any holiday that falls on a day the
--- job would otherwise be open.
-
+-- Date-specific closures: a job closed on a particular calendar date,
+-- overriding its weekly schedule (holidays, planned closings, etc.).
 CREATE TABLE IF NOT EXISTS job_holidays (
   id     SERIAL PRIMARY KEY,
   job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
@@ -224,74 +230,23 @@ CREATE TABLE IF NOT EXISTS job_holidays (
   UNIQUE (job_id, date)
 );
 
-
--- How a worker's weekly hours are governed. Anyone can be a worker: students
--- are capped at 20 hrs/wk across all jobs/departments; staff are classified
--- fulltime (40 regular + up to 20 overtime) or hourly (regular limit set by a
--- manager, default 40; overtime is anything over 40).
---
--- worker_type: 'student' | 'fulltime' | 'hourly' (default 'student').
--- hourly_limit: manager-set regular weekly hours for an 'hourly' worker
---   (1..40, where 40 is the default). NULL means use the 40 default.
-
-ALTER TABLE users ADD COLUMN IF NOT EXISTS worker_type TEXT NOT NULL DEFAULT 'student';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS hourly_limit INTEGER;
-
-
--- Backfill default operating hours for jobs that have none: weekdays 9am-5pm
--- (8h each, 40h/wk) and weekends 10h each (20h/wk). Only touches jobs with no
--- existing job_schedules rows, so it's safe to re-run.
-INSERT INTO job_schedules (job_id, day_of_week, start_time, end_time)
-SELECT j.id, d.dow, d.start_time, d.end_time
-FROM jobs j
-CROSS JOIN (VALUES
-  (1, '09:00'::time, '17:00'::time),
-  (2, '09:00'::time, '17:00'::time),
-  (3, '09:00'::time, '17:00'::time),
-  (4, '09:00'::time, '17:00'::time),
-  (5, '09:00'::time, '17:00'::time),
-  (6, '10:00'::time, '20:00'::time),
-  (0, '10:00'::time, '20:00'::time)
-) AS d(dow, start_time, end_time)
-WHERE NOT EXISTS (SELECT 1 FROM job_schedules js WHERE js.job_id = j.id);
-
-
--- Update weekday operating hours from the old 8am-4pm default to normal work
--- hours (9am-5pm). Only touches rows still on the old default, so manually
--- configured schedules are left alone. Idempotent.
-UPDATE job_schedules
-SET start_time = '09:00', end_time = '17:00'
-WHERE day_of_week BETWEEN 1 AND 5
-  AND start_time = '08:00' AND end_time = '16:00';
-
-
--- Scheduler-to-department scoping: a scheduler manages the schedule for one
--- department (and, by extension, its location).
-CREATE TABLE IF NOT EXISTS scheduler_assignments (
-  user_id       INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE
+-- Audit trail for schedule actions: who did what to a request, shift, or job
+-- assignment, and when. Actions are dotted lowercase past tense
+-- (request.approved, shift.assigned, job.removed); details carries the
+-- action-specific payload as JSON. Rows are never updated or deleted.
+-- team_id scopes the row for the report (managers see their scope's rows);
+-- NULL means unresolvable, which keeps the row admin-only.
+CREATE TABLE IF NOT EXISTS audit_log (
+  id          SERIAL PRIMARY KEY,
+  actor_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  action      TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id   INTEGER,
+  team_id     INTEGER REFERENCES teams(id) ON DELETE SET NULL,
+  details     JSONB,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-
--- Allow a job to have multiple shifts per day. 24h security coverage needs
--- three 8h shifts (00:00-08:00, 08:00-16:00, 16:00-24:00) on every day, which
--- the old UNIQUE (job_id, day_of_week) constraint forbade.
-ALTER TABLE job_schedules DROP CONSTRAINT job_schedules_job_id_day_of_week_key;
-ALTER TABLE job_schedules ADD CONSTRAINT job_schedules_job_id_day_of_week_start_time_key
-  UNIQUE (job_id, day_of_week, start_time);
-
-
--- Track which job a workqueue shift belongs to. The workqueue was department-
--- scoped, so a security shift and a maintenance shift in the same department
--- were indistinguishable and could be assigned to the wrong worker. With job_id
--- the seed (and schedulers) can match shifts to the workers qualified for them.
-ALTER TABLE workqueue ADD COLUMN job_id INTEGER REFERENCES jobs(id) ON DELETE SET NULL;
-
-
--- Group workqueue rows that were split from one original shift. When a shift is
--- split into assigned blocks + open remainders, every row keeps a reference to
--- the original shift id so the scheduler calendar can reconstruct the full shift
--- and show which 2-hour slots are already taken.
-ALTER TABLE workqueue ADD COLUMN parent_shift_id INTEGER REFERENCES workqueue(id) ON DELETE SET NULL;
-
-
+CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log (entity_type, entity_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_actor ON audit_log (actor_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_log_team ON audit_log (team_id, created_at DESC);

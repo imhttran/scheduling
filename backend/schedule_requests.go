@@ -2,9 +2,10 @@ package main
 
 import (
 	"errors"
-	"github.com/jackc/pgx/v5"
 	"net/http"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func listRequests(w http.ResponseWriter, r *http.Request) {
@@ -14,28 +15,17 @@ func listRequests(w http.ResponseWriter, r *http.Request) {
 		       r.type, r.status, r.reason
 		FROM schedule_requests r
 		JOIN workqueue w ON w.id = r.workqueue_id
-		JOIN departments d ON d.id = w.department_id
 		JOIN users u ON u.id = r.user_id
 		WHERE r.status = 'pending'`
 	args := []any{}
 	if !hasRole(u.Role, "admin") {
-		if u.Role == "scheduler" {
-			deptID, err := schedulerDepartmentID(r.Context(), u.ID)
-			if err != nil {
-				respond500(w, "List Requests Error", err, false)
-				return
-			}
-			query += ` AND w.department_id = $1`
-			args = append(args, deptID)
-		} else {
-			locID, err := managerLocationID(r.Context(), u.ID)
-			if err != nil {
-				respond500(w, "List Requests Error", err, false)
-				return
-			}
-			query += ` AND d.location_id = $1`
-			args = append(args, locID)
+		teamIDs, err := callerScopeTeamIDs(r.Context(), u.ID)
+		if err != nil {
+			respond500(w, "List Requests Error", err, false)
+			return
 		}
+		query += ` AND w.team_id = ANY($1)`
+		args = append(args, teamIDs)
 	}
 	query += ` ORDER BY r.created_at`
 	rows, err := db.Query(r.Context(), query, args...)
@@ -65,11 +55,15 @@ func listRequests(w http.ResponseWriter, r *http.Request) {
 }
 
 func approveRequest(w http.ResponseWriter, r *http.Request) {
-	var reqID, userID, wqID int
+	u := currentUser(r)
+	var reqID, userID, wqID, teamID int
 	var typ string
-	err := db.QueryRow(r.Context(),
-		`SELECT id, user_id, workqueue_id, type FROM schedule_requests WHERE id = $1 AND status = 'pending'`,
-		targetID(r)).Scan(&reqID, &userID, &wqID, &typ)
+	err := db.QueryRow(r.Context(), `
+		SELECT r.id, r.user_id, r.workqueue_id, r.type, w.team_id
+		FROM schedule_requests r
+		JOIN workqueue w ON w.id = r.workqueue_id
+		WHERE r.id = $1 AND r.status = 'pending'`,
+		targetID(r)).Scan(&reqID, &userID, &wqID, &typ, &teamID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		respond(w, http.StatusNotFound, msg("Pending request not found"))
 		return
@@ -78,13 +72,16 @@ func approveRequest(w http.ResponseWriter, r *http.Request) {
 		respond500(w, "Approve Request Error", err, false)
 		return
 	}
-	if !requestInCallerLocation(w, r, targetID(r)) {
+	if !requestInCallerScope(w, r, targetID(r)) {
 		return
 	}
 
 	if typ == "miss" {
-		_, err = db.Exec(r.Context(),
-			`UPDATE workqueue SET status = 'open', assigned_user_id = NULL WHERE id = $1`, wqID)
+		if _, err = db.Exec(r.Context(),
+			`UPDATE workqueue SET status = 'open', assigned_user_id = NULL WHERE id = $1`, wqID); err != nil {
+			respond500(w, "Approve Request Error", err, false)
+			return
+		}
 	} else {
 		// Re-check the worker's weekly cap at approval time: the worker's
 		// schedule may have filled up since the request was created.
@@ -106,6 +103,9 @@ func approveRequest(w http.ResponseWriter, r *http.Request) {
 				respond500(w, "Approve Request Error", err, false)
 				return
 			}
+			logAudit(r.Context(), u.ID, "request.denied", "schedule_request", reqID, teamID, map[string]any{
+				"type": typ, "workqueueId": wqID, "reason": "approval would exceed the worker's weekly hour limit",
+			})
 			respond(w, http.StatusBadRequest, msg("Approval would exceed the worker's weekly hour limit"))
 			return
 		}
@@ -123,24 +123,26 @@ func approveRequest(w http.ResponseWriter, r *http.Request) {
 				respond500(w, "Approve Request Error", err, false)
 				return
 			}
+			logAudit(r.Context(), u.ID, "request.denied", "schedule_request", reqID, teamID, map[string]any{
+				"type": typ, "workqueueId": wqID, "reason": "shift was already taken",
+			})
 			respond(w, http.StatusConflict, msg("Shift was already taken"))
 			return
 		}
-	}
-	if err != nil {
-		respond500(w, "Approve Request Error", err, false)
-		return
 	}
 	if _, err := db.Exec(r.Context(),
 		`UPDATE schedule_requests SET status = 'approved' WHERE id = $1`, reqID); err != nil {
 		respond500(w, "Approve Request Error", err, false)
 		return
 	}
+	logAudit(r.Context(), u.ID, "request.approved", "schedule_request", reqID, teamID, map[string]any{
+		"type": typ, "workqueueId": wqID, "workerId": userID,
+	})
 	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Request approved"})
 }
 
 func denyRequest(w http.ResponseWriter, r *http.Request) {
-	if !requestInCallerLocation(w, r, targetID(r)) {
+	if !requestInCallerScope(w, r, targetID(r)) {
 		return
 	}
 	tag, err := db.Exec(r.Context(),
@@ -153,10 +155,14 @@ func denyRequest(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusNotFound, msg("Pending request not found"))
 		return
 	}
+	wqID, workerID, teamID, typ := requestInfo(r.Context(), targetID(r))
+	logAudit(r.Context(), currentUser(r).ID, "request.denied", "schedule_request", targetID(r), teamID, map[string]any{
+		"type": typ, "workqueueId": wqID, "workerId": workerID,
+	})
 	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Request denied"})
 }
 
-// A student's own schedule requests, newest first.
+// A worker's own schedule requests, newest first.
 func myRequests(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	rows, err := db.Query(r.Context(), `
@@ -202,6 +208,10 @@ func cancelRequest(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusNotFound, msg("Pending request not found"))
 		return
 	}
+	wqID, _, teamID, typ := requestInfo(r.Context(), targetID(r))
+	logAudit(r.Context(), u.ID, "request.cancelled", "schedule_request", targetID(r), teamID, map[string]any{
+		"type": typ, "workqueueId": wqID,
+	})
 	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Request cancelled"})
 }
 
@@ -227,12 +237,17 @@ func createRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if _, err := db.Exec(r.Context(), `
+	var reqID, teamID int
+	if err := db.QueryRow(r.Context(), `
 		INSERT INTO schedule_requests (user_id, workqueue_id, type, status, reason)
-		VALUES ($1, $2, $3, 'pending', $4)`,
-		u.ID, body.WorkqueueID, body.Type, body.Reason); err != nil {
+		VALUES ($1, $2, $3, 'pending', $4)
+		RETURNING id, (SELECT team_id FROM workqueue WHERE id = $2)`,
+		u.ID, body.WorkqueueID, body.Type, body.Reason).Scan(&reqID, &teamID); err != nil {
 		respond500(w, "Create Request Error", err, true)
 		return
 	}
+	logAudit(r.Context(), u.ID, "request.created", "schedule_request", reqID, teamID, map[string]any{
+		"type": body.Type, "workqueueId": body.WorkqueueID, "reason": body.Reason,
+	})
 	respond(w, http.StatusOK, map[string]any{"success": true, "message": "Request submitted"})
 }

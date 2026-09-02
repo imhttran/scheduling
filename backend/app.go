@@ -62,7 +62,7 @@ func verificationRequired() bool { return cfg.EmailVerificationRequired }
 func loadConfig() {
 	cfg = Config{
 		Port:        envOr("PORT", "8080"),
-		DatabaseURL: envOr("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/go_template?sslmode=disable"),
+		DatabaseURL: envOr("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/go_template?sslmode=disable&search_path=scheduling"),
 		Env:         envOr("NODE_ENV", "development"),
 		FrontendURL: envOr("FRONTEND_URL", "http://localhost:3000"),
 		SMTPHost:    os.Getenv("SMTP_HOST"),
@@ -200,32 +200,33 @@ func newRouter() http.Handler {
 			r.With(requireRole("staff"), parseID).Post("/users/{id}/resend-verification", staffResendVerification)
 			r.With(requireRole("admin"), parseID).Post("/users/{id}/reset-password", adminResetPassword)
 
-			// ---- Student work-schedule system ----
-			r.With(requireRole("admin")).Get("/locations", listLocations)
-			r.With(requireRole("admin")).Post("/locations", createLocation)
-			r.With(requireRole("admin"), parseID).Patch("/locations/{id}", updateLocation)
-			r.With(requireRole("manager")).Get("/departments", listDepartments)
+			// ---- Work-schedule system: departments → teams → workers ----
+			r.With(requireRole("admin")).Get("/departments", listDepartments)
 			r.With(requireRole("admin")).Post("/departments", createDepartment)
 			r.With(requireRole("admin"), parseID).Patch("/departments/{id}", updateDepartment)
+			r.With(requireRole("manager")).Get("/teams", listTeams)
+			r.With(requireRole("manager"), requireDepartmentScope).Post("/teams", createTeam)
+			r.With(requireRole("manager"), requireDepartmentScope, parseID).Patch("/teams/{id}", updateTeam)
 			r.With(requireRole("manager")).Get("/jobs", listJobs)
-			r.With(requireRoleIn("manager", "admin")).Post("/jobs", createJob)
-			r.With(requireRoleIn("manager", "admin"), parseID).Patch("/jobs/{id}", updateJob)
+			r.With(requireRole("manager"), requireDepartmentScope).Post("/jobs", createJob)
+			r.With(requireRole("manager"), requireDepartmentScope, parseID).Patch("/jobs/{id}", updateJob)
 			r.With(requireRole("admin"), parseID).Post("/users/{id}/disable", setDisabled(true))
 			r.With(requireRole("admin"), parseID).Post("/users/{id}/enable", setDisabled(false))
-			r.With(requireRole("admin"), parseID).Post("/managers/{id}/assign", assignManager)
+			r.With(requireRole("admin"), parseID).Patch("/departments/{id}/manager", assignDepartmentManager)
+			r.With(requireRole("admin"), parseID).Patch("/teams/{id}/manager", assignTeamManager)
 
-			r.With(requireRole("manager")).Get("/students", listStudents)
-			r.With(requireRoleIn("manager", "admin")).Post("/workers", createWorker)
+			r.With(requireRole("manager")).Get("/workers", listWorkers)
+			r.With(requireRole("manager"), requireDepartmentScope).Post("/workers", createWorker)
 			r.With(requireRole("manager"), parseID).Get("/workers/{id}/calendar", workerCalendar)
-			r.With(requireRole("manager")).Get("/scheduler/calendar", schedulerCalendar)
+			r.With(requireRole("manager")).Get("/calendar", managerCalendar)
 			r.With(requireRole("manager"), parseID).Get("/workers/{id}/preferences", workerPreferences)
-			r.With(requireRole("manager"), parseID).Post("/students/{id}/jobs", assignStudentJob)
-			r.With(requireRole("manager"), parseID, parseJobID).Delete("/students/{id}/jobs/{jobId}", removeStudentJob)
-			r.With(requireRole("manager"), parseID).Post("/students/{id}/schedule", addWeeklySchedule)
+			r.With(requireRole("manager"), parseID).Post("/workers/{id}/jobs", assignWorkerJob)
+			r.With(requireRole("manager"), parseID, parseJobID).Delete("/workers/{id}/jobs/{jobId}", removeWorkerJob)
+			r.With(requireRole("manager"), parseID).Post("/workers/{id}/schedule", addWeeklySchedule)
 			r.With(requireRole("manager"), parseID).Patch("/users/{id}/worker", setWorkerDetails)
 			r.With(requireRole("manager")).Post("/workqueue", createWorkqueueShift)
 			r.With(requireRole("manager")).Get("/staff/workqueue", staffWorkqueue)
-			r.With(requireRole("scheduler"), parseID).Post("/staff/workqueue/{id}/assign", assignWorkqueueShift)
+			r.With(requireRole("manager"), parseID).Post("/staff/workqueue/{id}/assign", assignWorkqueueShift)
 			r.With(requireRole("manager")).Get("/requests", listRequests)
 			r.With(requireRole("manager"), parseID).Post("/requests/{id}/approve", approveRequest)
 			r.With(requireRole("manager"), parseID).Post("/requests/{id}/deny", denyRequest)
@@ -239,23 +240,28 @@ func newRouter() http.Handler {
 			r.Get("/me/preferences", myPreferences)
 			r.Post("/me/preferences", addPreference)
 
-			// Bundled AI assistant — exact manager/admin match, so scheduler
-			// (which ranks above manager) does not get it.
-			r.With(requireRoleIn("manager", "admin")).Post("/ai/chat", aiChat)
+			// Bundled AI assistant — managers and up (enforced below).
+			r.With(requireRole("manager")).Post("/ai/chat", aiChat)
+
+			// Audit report: managers see their scope's entries, admins
+			// everything (listAudit scopes the rows per role).
+			r.With(requireRole("manager")).Get("/audit", listAudit)
+			r.With(requireRole("manager")).Get("/audit/export", exportAudit)
 		})
 	})
 	return r
 }
 
 type authUser struct {
-	ID                 int    `json:"id"`
-	Email              string `json:"email"`
-	Role               string `json:"role"`
-	EmailVerified      bool   `json:"emailVerified"`
-	MustChangePassword bool   `json:"mustChangePassword"`
-	HasProfile         bool   `json:"hasProfile"`
-	Disabled           bool   `json:"disabled"`
-	Password           string `json:"-"` // stored hash, for /api/change-password
+	ID                 int      `json:"id"`
+	Email              string   `json:"email"`
+	Role               string   `json:"role"`  // generated: highest-ranked held role
+	Roles              []string `json:"roles"` // all held roles, the source of truth
+	EmailVerified      bool     `json:"emailVerified"`
+	MustChangePassword bool     `json:"mustChangePassword"`
+	HasProfile         bool     `json:"hasProfile"`
+	Disabled           bool     `json:"disabled"`
+	Password           string   `json:"-"` // stored hash, for /api/change-password
 }
 
 type ctxKey int
@@ -305,11 +311,11 @@ func requireAuth(next http.Handler) http.Handler {
 		}
 		var u authUser
 		err = db.QueryRow(r.Context(), `
-			SELECT id, email, role, email_verified, must_change_password, password,
+			SELECT id, email, role, roles, email_verified, must_change_password, password,
 			       disabled,
 			       EXISTS (SELECT 1 FROM user_profiles WHERE user_id = users.id)
 			FROM users WHERE email = $1`, email).
-			Scan(&u.ID, &u.Email, &u.Role, &u.EmailVerified, &u.MustChangePassword, &u.Password, &u.Disabled, &u.HasProfile)
+			Scan(&u.ID, &u.Email, &u.Role, &u.Roles, &u.EmailVerified, &u.MustChangePassword, &u.Password, &u.Disabled, &u.HasProfile)
 		if errors.Is(err, pgx.ErrNoRows) {
 			respond(w, http.StatusNotFound, msg("User not found"))
 			return
@@ -361,20 +367,27 @@ func requireRole(minRole string) func(http.Handler) http.Handler {
 	}
 }
 
-// Allows only the given roles (exact match) — for cases where the linear
-// hierarchy doesn't fit, e.g. job management is manager/admin but not scheduler.
-func requireRoleIn(roles ...string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			for _, role := range roles {
-				if currentUser(r).Role == role {
-					next.ServeHTTP(w, r)
-					return
-				}
-			}
+// Gate for department-level actions (creating teams, jobs, workers): the
+// caller must manage at least one department — a team-scoped manager doesn't
+// clear it. Admins are exempt.
+func requireDepartmentScope(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := currentUser(r)
+		if hasRole(u.Role, "admin") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		ok, err := callerHasDepartmentScope(r.Context(), u.ID)
+		if err != nil {
+			respond500(w, "Scope Error", err, false)
+			return
+		}
+		if !ok {
 			respond(w, http.StatusForbidden, msg("Insufficient permissions"))
-		})
-	}
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Shared by every route taking a :id param — rejects non-numeric ids before

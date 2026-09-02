@@ -98,6 +98,7 @@ func me(w http.ResponseWriter, r *http.Request) {
 		"id":                 u.ID,
 		"email":              u.Email,
 		"role":               u.Role,
+		"roles":              u.Roles,
 		"emailVerified":      u.EmailVerified,
 		"mustChangePassword": u.MustChangePassword,
 		"hasProfile":         u.HasProfile,
