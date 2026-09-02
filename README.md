@@ -4,8 +4,10 @@ Full-stack auth template: **Next.js → Go API → PostgreSQL**. The browser onl
 ever talks to Next.js; the Go API is proxied server-side and never exposed
 directly.
 
-▶ **[Watch the demo](Scheduling-Demo-compact.mp4)** — signup, login + 2FA, student,
-staff, manager, admin + RBAC, onboarding, scheduler, and audit.
+▶ **Watch the demo** — signup, login + 2FA, student, staff, manager, admin + RBAC,
+onboarding, scheduler, and audit:
+
+https://github.com/user-attachments/assets/cd36b024-66e5-429b-bdc9-e18c630258ff
 
 ```
 Browser
