@@ -90,11 +90,9 @@ Prefer containers over the local `manage.sh` workflow? The repo ships a
 ### Switch to Docker
 
 1. **Copy the Docker env file** — it uses non-conflicting ports so Docker can
-   run alongside `manage.sh`:
-
-   ```bash
-   cp .env.docker .env
-   ```
+   run alongside `manage.sh`. `.env.docker` is personal config (not in the
+   repo) — ask a teammate for a copy, or create `.env` from `.env.example`
+   with these docker overrides:
 
    This maps the frontend to **:3001**, backend to **:8081**, and Postgres to
    **:5433**. To use the default ports instead, edit `.env` and set

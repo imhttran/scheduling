@@ -4,8 +4,9 @@ Everything this project does with PostgreSQL, in one page.
 
 ## Connection
 
-One variable: `DATABASE_URL` (`.env.dev` already provides the dev default; a
-personal root `.env` overrides it).
+One variable: `DATABASE_URL` (a personal `.env` or `.env.dev` provides the
+connection; neither is in the repo — copy the values from `.env.example` and
+fill in your local credentials).
 
 ```
 postgres://postgres:postgres@localhost:5432/go_template?sslmode=disable
