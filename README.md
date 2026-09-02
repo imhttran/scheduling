@@ -4,7 +4,7 @@ Full-stack auth template: **Next.js → Go API → PostgreSQL**. The browser onl
 ever talks to Next.js; the Go API is proxied server-side and never exposed
 directly.
 
-▶ **[Watch the demo](Scheduling-Demo.mp4)** — signup, login + 2FA, student,
+▶ **[Watch the demo](Scheduling-Demo-compact.mp4)** — signup, login + 2FA, student,
 staff, manager, admin + RBAC, onboarding, scheduler, and audit.
 
 ```
@@ -130,7 +130,8 @@ different ports.
 
 ## Demo video
 
-`Scheduling-Demo.mp4` at the project root is built from the live app by
+`Scheduling-Demo-compact.mp4` (committed here) is a compressed re-encode of the
+full-res `Scheduling-Demo.mp4`, which is built from the live app by
 `scripts/demo/`:
 
 1. `node scripts/demo/reset-demo.mjs` — resets demo-mutated state via the API
