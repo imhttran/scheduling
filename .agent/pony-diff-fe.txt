@@ -1,0 +1,1864 @@
+diff --git a/frontend/app/(app)/admin/page.tsx b/frontend/app/(app)/admin/page.tsx
+index 5510826..f546b14 100644
+--- a/frontend/app/(app)/admin/page.tsx
++++ b/frontend/app/(app)/admin/page.tsx
+@@ -8,7 +8,7 @@ import {
+   type FormEvent,
+ } from "react";
+ import { API_BASE, callApi } from "@/lib/api";
+-import { ROLES } from "@/lib/roles";
++import { ROLES, hasAnyRole } from "@/lib/roles";
+ import { PageHeader } from "@/components/PageHeader";
+ import { PageFooter } from "@/components/PageFooter";
+ import { PageTitle } from "@/components/PageTitle";
+@@ -17,25 +17,13 @@ import { Modal } from "@/components/Modal";
+ import { JobModal, type JobInput } from "@/components/JobModal";
+ import { useSortablePage } from "@/lib/pagination";
+ import { DataGrid, type Column } from "@/components/DataGrid";
+-import type { Department, Job } from "@/lib/types";
++import type { Department, Job, Team } from "@/lib/types";
+ 
+-type Location = {
+-  id: number;
+-  name: string;
+-  abbreviation?: string | null;
+-  address?: string | null;
+-  address2?: string | null;
+-  city?: string | null;
+-  state?: string | null;
+-  zip?: string | null;
+-  country?: string | null;
+-  managerId?: number | null;
+-  managerEmail?: string | null;
+-};
+ type User = {
+   id: number;
+   email: string;
+   role: string;
++  roles: string[];
+   disabled?: boolean;
+   uid?: string | null;
+   firstName?: string | null;
+@@ -50,22 +38,21 @@ type User = {
+   communicationPreference?: string | null;
+ };
+ 
+-type LocationModal =
+-  { mode: "create" } | { mode: "edit"; loc: Location } | null;
+ type DepartmentModal =
+   { mode: "create" } | { mode: "edit"; dept: Department } | null;
++type TeamModal = { mode: "create" } | { mode: "edit"; team: Team } | null;
+ type JobModal = { mode: "create" } | { mode: "edit"; job: Job } | null;
+ type UserModal = { mode: "create" } | { mode: "edit"; user: User } | null;
+ 
+ function userValue(u: User, key: string) {
+   return u[key as keyof User];
+ }
+-function locValue(l: Location, key: string) {
+-  return l[key as keyof Location];
+-}
+ function deptValue(d: Department, key: string) {
+   return d[key as keyof Department];
+ }
++function teamValue(d: Team, key: string) {
++  return d[key as keyof Team];
++}
+ function jobValue(j: Job, key: string) {
+   if (key === "workers") return j.currentWorkers;
+   if (key === "holidays") return j.holidays.length;
+@@ -75,13 +62,13 @@ function jobValue(j: Job, key: string) {
+ export default function AdminPage() {
+   const [token, setToken] = useState<string | null>(null);
+   const [email, setEmail] = useState("");
+-  const [locations, setLocations] = useState<Location[]>([]);
+   const [departments, setDepartments] = useState<Department[]>([]);
++  const [teams, setTeams] = useState<Team[]>([]);
+   const [jobs, setJobs] = useState<Job[]>([]);
+   const [users, setUsers] = useState<User[]>([]);
+   const [search, setSearch] = useState("");
+-  const [locationModal, setLocationModal] = useState<LocationModal>(null);
+   const [departmentModal, setDepartmentModal] = useState<DepartmentModal>(null);
++  const [teamModal, setTeamModal] = useState<TeamModal>(null);
+   const [jobModal, setJobModal] = useState<JobModal>(null);
+   const [userModal, setUserModal] = useState<UserModal>(null);
+   const passwordRef = useRef<HTMLInputElement>(null);
+@@ -92,20 +79,20 @@ export default function AdminPage() {
+         (u) =>
+           (u.email ?? "").toLowerCase().includes(q) ||
+           (u.uid ?? "").toLowerCase().includes(q) ||
+-          (u.role ?? "").toLowerCase().includes(q),
++          (u.roles ?? []).join(",").toLowerCase().includes(q),
+       )
+     : users;
+ 
+   const usersGrid = useSortablePage<User>(filteredUsers, userValue, "email");
+-  const locationsGrid = useSortablePage<Location>(locations, locValue, "name");
+   const departmentsGrid = useSortablePage<Department>(
+     departments,
+     deptValue,
+     "name",
+   );
++  const teamsGrid = useSortablePage<Team>(teams, teamValue, "name");
+   const jobsGrid = useSortablePage<Job>(jobs, jobValue, "name");
+ 
+-  const locationColumns: Column<Location>[] = [
++  const departmentColumns: Column<Department>[] = [
+     { key: "name", label: "Name", sortable: true },
+     {
+       key: "abbreviation",
+@@ -138,17 +125,17 @@ export default function AdminPage() {
+         <select
+           value={l.managerId ?? ""}
+           onChange={(e) => {
+-            const managerId = e.target.value;
+-            if (managerId) {
+-              act(`/api/managers/${managerId}/assign`, "POST", {
+-                locationId: l.id,
++            const userId = e.target.value;
++            if (userId) {
++              act(`/api/departments/${l.id}/manager`, "PATCH", {
++                userId: Number(userId),
+               });
+             }
+           }}
+         >
+           <option value="">—</option>
+           {users
+-            .filter((u) => u.role === "manager" || u.role === "scheduler")
++            .filter((u) => hasAnyRole(u.roles, "manager"))
+             .map((m) => (
+               <option key={m.id} value={m.id}>
+                 {m.email}
+@@ -162,7 +149,7 @@ export default function AdminPage() {
+       render: (l) => (
+         <button
+           type="button"
+-          onClick={() => setLocationModal({ mode: "edit", loc: l })}
++          onClick={() => setDepartmentModal({ mode: "edit", dept: l })}
+         >
+           Edit
+         </button>
+@@ -170,21 +157,21 @@ export default function AdminPage() {
+     },
+   ];
+ 
+-  const departmentColumns: Column<Department>[] = [
++  const teamColumns: Column<Team>[] = [
+     { key: "name", label: "Name", sortable: true },
+     {
+-      key: "departmentCode",
++      key: "teamCode",
+       label: "Code",
+       sortable: true,
+-      render: (d) => d.departmentCode ?? "—",
++      render: (d) => d.teamCode ?? "—",
+     },
+-    { key: "locationName", label: "Location", sortable: true },
++    { key: "departmentName", label: "Department", sortable: true },
+     {
+       label: "",
+       render: (d) => (
+         <button
+           type="button"
+-          onClick={() => setDepartmentModal({ mode: "edit", dept: d })}
++          onClick={() => setTeamModal({ mode: "edit", team: d })}
+         >
+           Edit
+         </button>
+@@ -194,8 +181,8 @@ export default function AdminPage() {
+ 
+   const adminJobColumns: Column<Job>[] = [
+     { key: "name", label: "Name", sortable: true },
++    { key: "teamName", label: "Team", sortable: true },
+     { key: "departmentName", label: "Department", sortable: true },
+-    { key: "locationName", label: "Location", sortable: true },
+     {
+       key: "workers",
+       label: "Workers",
+@@ -230,7 +217,12 @@ export default function AdminPage() {
+   const userColumns: Column<User>[] = [
+     { key: "email", label: "Email", sortable: true },
+     { key: "uid", label: "UID", render: (u) => u.uid ?? "—" },
+-    { key: "role", label: "Role", sortable: true },
++    {
++      key: "role",
++      label: "Roles",
++      sortable: true,
++      render: (u) => (u.roles ?? []).join(", "),
++    },
+     {
+       key: "disabled",
+       label: "Status",
+@@ -271,17 +263,17 @@ export default function AdminPage() {
+   ];
+ 
+   const load = useCallback(async (authToken: string) => {
+-    const [l, d, j, u] = await Promise.all([
+-      callApi<{ locations: Location[] }>(
++    const [d, t, j, u] = await Promise.all([
++      callApi<{ departments: Department[] }>(
+         authToken,
+-        "/api/locations",
++        "/api/departments",
+         "GET",
+         undefined,
+         false,
+       ),
+-      callApi<{ departments: Department[] }>(
++      callApi<{ teams: Team[] }>(
+         authToken,
+-        "/api/departments",
++        "/api/teams",
+         "GET",
+         undefined,
+         false,
+@@ -295,8 +287,8 @@ export default function AdminPage() {
+         false,
+       ),
+     ]);
+-    if (l) setLocations(l.locations ?? []);
+     if (d) setDepartments(d.departments ?? []);
++    if (t) setTeams(t.teams ?? []);
+     if (j) setJobs(j.jobs ?? []);
+     if (u) setUsers(u.users ?? []);
+   }, []);
+@@ -338,38 +330,38 @@ export default function AdminPage() {
+     })();
+   };
+ 
+-  const saveLocation = (event: FormEvent<HTMLFormElement>) => {
++  const saveDepartment = (event: FormEvent<HTMLFormElement>) => {
+     event.preventDefault();
+     const data = new FormData(event.currentTarget);
+     const body: Record<string, unknown> = {};
+     for (const [k, v] of data.entries()) body[k] = v;
+-    if (locationModal?.mode === "edit") {
+-      act(`/api/locations/${locationModal.loc.id}`, "PATCH", body);
++    if (departmentModal?.mode === "edit") {
++      act(`/api/departments/${departmentModal.dept.id}`, "PATCH", body);
+     } else {
+-      act("/api/locations", "POST", body);
++      act("/api/departments", "POST", body);
+     }
+-    setLocationModal(null);
++    setDepartmentModal(null);
+   };
+ 
+-  const saveDepartment = (event: FormEvent<HTMLFormElement>) => {
++  const saveTeam = (event: FormEvent<HTMLFormElement>) => {
+     event.preventDefault();
+     const data = new FormData(event.currentTarget);
+     const body: Record<string, unknown> = {};
+     for (const [k, v] of data.entries()) body[k] = v;
+     // Backend expects a number; FormData yields a string.
+-    body.locationId = Number(data.get("locationId"));
+-    if (departmentModal?.mode === "edit") {
+-      act(`/api/departments/${departmentModal.dept.id}`, "PATCH", body);
++    body.departmentId = Number(data.get("departmentId"));
++    if (teamModal?.mode === "edit") {
++      act(`/api/teams/${teamModal.team.id}`, "PATCH", body);
+     } else {
+-      act("/api/departments", "POST", body);
++      act("/api/teams", "POST", body);
+     }
+-    setDepartmentModal(null);
++    setTeamModal(null);
+   };
+ 
+   const saveJob = (data: JobInput) => {
+     const body: Record<string, unknown> = {
+       name: data.name,
+-      departmentId: data.departmentId,
++      teamId: data.teamId,
+       optimalWorkers: data.optimalWorkers,
+       schedules: data.schedules.map((s) => ({
+         dayOfWeek: s.dayOfWeek,
+@@ -396,7 +388,7 @@ export default function AdminPage() {
+     for (const [k, v] of data.entries()) body[k] = v;
+     if (userModal?.mode === "edit") {
+       act(`/api/users/${userModal.user.id}/role`, "PATCH", {
+-        role: body.role,
++        roles: data.getAll("role"),
+         uid: body.uid,
+       });
+       act(`/api/users/${userModal.user.id}/profile`, "PATCH", {
+@@ -478,50 +470,51 @@ export default function AdminPage() {
+ 
+       <div className="with-sidebar">
+         <nav className="sidebar">
+-          <a href="#locations">Locations</a>
+           <a href="#departments">Departments</a>
++          <a href="#teams">Teams</a>
+           <a href="#jobs">Jobs</a>
+           <a href="#access-control">Access Control</a>
++          <a href="/audit">Audit Report</a>
+           <a className="logout-link" href="/" onClick={logout}>
+             Logout
+           </a>
+         </nav>
+         <div className="dashboard-card">
+-          <div className="user-list-section" id="locations">
++          <div className="user-list-section" id="departments">
+             <div className="section-title-row">
+-              <h2>Locations</h2>
++              <h2>Departments</h2>
+               <button
+                 type="button"
+                 className="login-button add-button"
+-                onClick={() => setLocationModal({ mode: "create" })}
++                onClick={() => setDepartmentModal({ mode: "create" })}
+               >
+-                Add Location
++                Add Department
+               </button>
+             </div>
+             <DataGrid
+-              grid={locationsGrid}
+-              columns={locationColumns}
++              grid={departmentsGrid}
++              columns={departmentColumns}
+               getRowKey={(l) => l.id}
+-              emptyText="No locations yet."
++              emptyText="No departments yet."
+             />
+           </div>
+ 
+-          <div className="user-list-section" id="departments">
++          <div className="user-list-section" id="teams">
+             <div className="section-title-row">
+-              <h2>Departments</h2>
++              <h2>Teams</h2>
+               <button
+                 type="button"
+                 className="login-button add-button"
+-                onClick={() => setDepartmentModal({ mode: "create" })}
++                onClick={() => setTeamModal({ mode: "create" })}
+               >
+-                Add Department
++                Add Team
+               </button>
+             </div>
+             <DataGrid
+-              grid={departmentsGrid}
+-              columns={departmentColumns}
++              grid={teamsGrid}
++              columns={teamColumns}
+               getRowKey={(d) => d.id}
+-              emptyText="No departments yet."
++              emptyText="No teams yet."
+             />
+           </div>
+ 
+@@ -538,7 +531,7 @@ export default function AdminPage() {
+             </div>
+             <p className="section-hint">
+               A job is a position a worker/student is qualified to do, within a
+-              department at a location.
++              team in a department.
+             </p>
+             <DataGrid
+               grid={jobsGrid}
+@@ -579,21 +572,23 @@ export default function AdminPage() {
+         </div>
+       </div>
+ 
+-      {locationModal && (
++      {departmentModal && (
+         <Modal
+           title={
+-            locationModal.mode === "edit" ? "Edit Location" : "Add Location"
++            departmentModal.mode === "edit"
++              ? "Edit Department"
++              : "Add Department"
+           }
+-          onClose={() => setLocationModal(null)}
++          onClose={() => setDepartmentModal(null)}
+         >
+-          <form className="modal-form" onSubmit={saveLocation}>
++          <form className="modal-form" onSubmit={saveDepartment}>
+             <input
+               type="text"
+               name="name"
+               placeholder="Name"
+               required
+               defaultValue={
+-                locationModal.mode === "edit" ? locationModal.loc.name : ""
++                departmentModal.mode === "edit" ? departmentModal.dept.name : ""
+               }
+             />
+             <input
+@@ -601,8 +596,8 @@ export default function AdminPage() {
+               name="abbreviation"
+               placeholder="Abbreviation"
+               defaultValue={
+-                locationModal.mode === "edit"
+-                  ? (locationModal.loc.abbreviation ?? "")
++                departmentModal.mode === "edit"
++                  ? (departmentModal.dept.abbreviation ?? "")
+                   : ""
+               }
+             />
+@@ -611,8 +606,8 @@ export default function AdminPage() {
+               name="address"
+               placeholder="Address"
+               defaultValue={
+-                locationModal.mode === "edit"
+-                  ? (locationModal.loc.address ?? "")
++                departmentModal.mode === "edit"
++                  ? (departmentModal.dept.address ?? "")
+                   : ""
+               }
+             />
+@@ -621,8 +616,8 @@ export default function AdminPage() {
+               name="address2"
+               placeholder="Address 2"
+               defaultValue={
+-                locationModal.mode === "edit"
+-                  ? (locationModal.loc.address2 ?? "")
++                departmentModal.mode === "edit"
++                  ? (departmentModal.dept.address2 ?? "")
+                   : ""
+               }
+             />
+@@ -631,8 +626,8 @@ export default function AdminPage() {
+               name="city"
+               placeholder="City"
+               defaultValue={
+-                locationModal.mode === "edit"
+-                  ? (locationModal.loc.city ?? "")
++                departmentModal.mode === "edit"
++                  ? (departmentModal.dept.city ?? "")
+                   : ""
+               }
+             />
+@@ -641,8 +636,8 @@ export default function AdminPage() {
+               name="state"
+               placeholder="State"
+               defaultValue={
+-                locationModal.mode === "edit"
+-                  ? (locationModal.loc.state ?? "")
++                departmentModal.mode === "edit"
++                  ? (departmentModal.dept.state ?? "")
+                   : ""
+               }
+             />
+@@ -651,8 +646,8 @@ export default function AdminPage() {
+               name="zip"
+               placeholder="Zip"
+               defaultValue={
+-                locationModal.mode === "edit"
+-                  ? (locationModal.loc.zip ?? "")
++                departmentModal.mode === "edit"
++                  ? (departmentModal.dept.zip ?? "")
+                   : ""
+               }
+             />
+@@ -661,8 +656,8 @@ export default function AdminPage() {
+               name="country"
+               placeholder="Country"
+               defaultValue={
+-                locationModal.mode === "edit"
+-                  ? (locationModal.loc.country ?? "")
++                departmentModal.mode === "edit"
++                  ? (departmentModal.dept.country ?? "")
+                   : ""
+               }
+             />
+@@ -670,7 +665,7 @@ export default function AdminPage() {
+               <button
+                 type="button"
+                 className="cancel-button"
+-                onClick={() => setLocationModal(null)}
++                onClick={() => setDepartmentModal(null)}
+               >
+                 Cancel
+               </button>
+@@ -682,46 +677,38 @@ export default function AdminPage() {
+         </Modal>
+       )}
+ 
+-      {departmentModal && (
++      {teamModal && (
+         <Modal
+-          title={
+-            departmentModal.mode === "edit"
+-              ? "Edit Department"
+-              : "Add Department"
+-          }
+-          onClose={() => setDepartmentModal(null)}
++          title={teamModal.mode === "edit" ? "Edit Team" : "Add Team"}
++          onClose={() => setTeamModal(null)}
+         >
+-          <form className="modal-form" onSubmit={saveDepartment}>
++          <form className="modal-form" onSubmit={saveTeam}>
+             <input
+               type="text"
+               name="name"
+-              placeholder="Department name"
++              placeholder="Team name"
+               required
+               defaultValue={
+-                departmentModal.mode === "edit" ? departmentModal.dept.name : ""
++                teamModal.mode === "edit" ? teamModal.team.name : ""
+               }
+             />
+             <input
+               type="text"
+-              name="departmentCode"
++              name="teamCode"
+               placeholder="Code (max 20)"
+               maxLength={20}
+               defaultValue={
+-                departmentModal.mode === "edit"
+-                  ? (departmentModal.dept.departmentCode ?? "")
+-                  : ""
++                teamModal.mode === "edit" ? (teamModal.team.teamCode ?? "") : ""
+               }
+             />
+             <select
+-              name="locationId"
++              name="departmentId"
+               required
+               defaultValue={
+-                departmentModal.mode === "edit"
+-                  ? departmentModal.dept.locationId
+-                  : ""
++                teamModal.mode === "edit" ? teamModal.team.departmentId : ""
+               }
+             >
+-              {locations.map((l) => (
++              {departments.map((l) => (
+                 <option key={l.id} value={l.id}>
+                   {l.name}
+                 </option>
+@@ -731,7 +718,7 @@ export default function AdminPage() {
+               <button
+                 type="button"
+                 className="cancel-button"
+-                onClick={() => setDepartmentModal(null)}
++                onClick={() => setTeamModal(null)}
+               >
+                 Cancel
+               </button>
+@@ -746,7 +733,7 @@ export default function AdminPage() {
+       {jobModal && (
+         <JobModal
+           job={jobModal.mode === "edit" ? jobModal.job : null}
+-          departments={departments}
++          teams={teams}
+           onSave={saveJob}
+           onClose={() => setJobModal(null)}
+         />
+@@ -761,13 +748,19 @@ export default function AdminPage() {
+             {userModal.mode === "edit" ? (
+               <>
+                 <p className="section-hint">{userModal.user.email}</p>
+-                <select name="role" required defaultValue={userModal.user.role}>
++                <div className="role-picker">
+                   {ROLES.map((r) => (
+-                    <option key={r} value={r}>
++                    <label key={r}>
++                      <input
++                        type="checkbox"
++                        name="role"
++                        value={r}
++                        defaultChecked={userModal.user.roles?.includes(r)}
++                      />
+                       {r}
+-                    </option>
++                    </label>
+                   ))}
+-                </select>
++                </div>
+                 <input
+                   type="text"
+                   name="uid"
+diff --git a/frontend/app/(app)/audit/page.tsx b/frontend/app/(app)/audit/page.tsx
+new file mode 100644
+index 0000000..8a0145a
+--- /dev/null
++++ b/frontend/app/(app)/audit/page.tsx
+@@ -0,0 +1,205 @@
++"use client";
++
++import { useCallback, useEffect, useState } from "react";
++import { API_BASE, callApi } from "@/lib/api";
++import { PageHeader } from "@/components/PageHeader";
++import { PageFooter } from "@/components/PageFooter";
++import { PageTitle } from "@/components/PageTitle";
++import { DataGrid, type Column } from "@/components/DataGrid";
++import { usePager } from "@/lib/pagination";
++import type { AuditEntry } from "@/lib/types";
++
++// Action groups for the filter. Values are the backend's action prefixes.
++const FILTERS = [
++  { value: "", label: "All activity" },
++  { value: "request", label: "Requests" },
++  { value: "shift", label: "Shifts" },
++  { value: "job", label: "Jobs" },
++];
++
++const actionLabel = (action: string) =>
++  action
++    .split(".")
++    .slice(1)
++    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
++    .join(" ");
++
++// Compact one-line rendering of the row's JSON payload, e.g.
++// "type: overflow, workerId: 12, reason: extra hours".
++const fmtDetails = (details: AuditEntry["details"]) => {
++  if (!details) return "—";
++  return Object.entries(details)
++    .map(([key, value]) => {
++      const text =
++        typeof value === "object" && value !== null
++          ? JSON.stringify(value)
++          : String(value);
++      return `${key}: ${text}`;
++    })
++    .join(", ");
++};
++
++export default function AuditPage() {
++  const [token, setToken] = useState<string | null>(null);
++  const [email, setEmail] = useState("");
++  const [role, setRole] = useState("");
++  const [entries, setEntries] = useState<AuditEntry[]>([]);
++  const [filter, setFilter] = useState("");
++
++  const grid = usePager<AuditEntry>(entries, { min: 4 });
++
++  const load = useCallback(async (authToken: string, prefix: string) => {
++    const res = await callApi<{ entries: AuditEntry[] }>(
++      authToken,
++      `/api/audit${prefix ? `?action=${prefix}` : ""}`,
++      "GET",
++      undefined,
++      false,
++    );
++    if (res) setEntries(res.entries ?? []);
++  }, []);
++
++  useEffect(() => {
++    (async () => {
++      const stored = localStorage.getItem("auth_token");
++      if (!stored) {
++        window.location.href = "/";
++        return;
++      }
++      const me = await callApi<{ user: { email: string; role: string } }>(
++        stored,
++        "/api/me",
++        "GET",
++        undefined,
++        false,
++      );
++      if (!me) {
++        localStorage.removeItem("auth_token");
++        window.location.href = "/";
++        return;
++      }
++      // Managers and admins get a scoped report (backend enforces the same
++      // scoping); everyone else goes back to the dashboard.
++      if (me.user.role !== "manager" && me.user.role !== "admin") {
++        window.location.href = "/dashboard";
++        return;
++      }
++      setToken(stored);
++      setEmail(me.user.email);
++      setRole(me.user.role);
++      await load(stored, "");
++    })();
++  }, [load]);
++
++  const changeFilter = (prefix: string) => {
++    setFilter(prefix);
++    if (token) void load(token, prefix);
++  };
++
++  // Downloads the scoped report (same 15-day window + filter) as CSV. Auth is
++  // header-based, so a plain link won't do — fetch to a blob and save it.
++  const exportCSV = async () => {
++    if (!token) return;
++    try {
++      const response = await fetch(
++        `${API_BASE}/api/audit/export${filter ? `?action=${filter}` : ""}`,
++        { headers: { Authorization: `Bearer ${token}` } },
++      );
++      if (!response.ok) return;
++      const blob = await response.blob();
++      const url = URL.createObjectURL(blob);
++      const a = document.createElement("a");
++      a.href = url;
++      a.download = "audit-report.csv";
++      a.click();
++      URL.revokeObjectURL(url);
++    } catch {
++      alert("Export failed. Is the backend running?");
++    }
++  };
++
++  const logout = (event: { preventDefault: () => void }) => {
++    event.preventDefault();
++    localStorage.removeItem("auth_token");
++    window.location.href = "/";
++  };
++
++  const columns: Column<AuditEntry>[] = [
++    {
++      label: "When",
++      render: (e) => new Date(e.createdAt).toLocaleString(),
++    },
++    { label: "Who", render: (e) => e.actorEmail ?? "—" },
++    { label: "Action", render: (e) => actionLabel(e.action) },
++    { label: "Team", render: (e) => e.teamName ?? "—" },
++    {
++      label: "Entity",
++      render: (e) =>
++        e.entityId != null ? `${e.entityType} #${e.entityId}` : e.entityType,
++    },
++    { label: "Details", render: (e) => fmtDetails(e.details) },
++  ];
++
++  return (
++    <div className="dashboard-container wide">
++      <PageTitle title="Audit Report" />
++      <PageHeader
++        title="Audit Report"
++        subtitle="Request, shift, and job actions from the last 15 days, scoped to what you manage."
++        right={
++          <>
++            Welcome, <span className="highlight">{email}</span>
++          </>
++        }
++      />
++
++      <div className="with-sidebar">
++        <nav className="sidebar">
++          <a href={role === "admin" ? "/admin" : "/manager"}>
++            Back to {role === "admin" ? "Admin" : "Manager"}
++          </a>
++          <a className="logout-link" href="/" onClick={logout}>
++            Logout
++          </a>
++        </nav>
++
++        <div className="dashboard-card">
++          <div className="user-list-section">
++            <div className="section-title-row">
++              <h2>Audit Report</h2>
++              <div
++                style={{ display: "flex", gap: "8px", alignItems: "center" }}
++              >
++                <select
++                  value={filter}
++                  onChange={(event) => changeFilter(event.target.value)}
++                >
++                  {FILTERS.map((f) => (
++                    <option key={f.value} value={f.value}>
++                      {f.label}
++                    </option>
++                  ))}
++                </select>
++                <button type="button" onClick={() => void exportCSV()}>
++                  Export CSV
++                </button>
++              </div>
++            </div>
++            <p className="section-hint">
++              Managers see every team in their department; admins see
++              everything. Older entries drop off after 15 days.
++            </p>
++            <DataGrid
++              grid={grid}
++              columns={columns}
++              getRowKey={(e) => e.id}
++              emptyText="No audit activity in the last 15 days."
++            />
++          </div>
++        </div>
++      </div>
++
++      <PageFooter />
++    </div>
++  );
++}
+diff --git a/frontend/app/(app)/scheduler/calendar/page.tsx b/frontend/app/(app)/calendar/page.tsx
+similarity index 87%
+rename from frontend/app/(app)/scheduler/calendar/page.tsx
+rename to frontend/app/(app)/calendar/page.tsx
+index b978969..74e2ccd 100644
+--- a/frontend/app/(app)/scheduler/calendar/page.tsx
++++ b/frontend/app/(app)/calendar/page.tsx
+@@ -18,9 +18,10 @@ import {
+   type ResourceShift,
+ } from "@/components/ResourceCalendar";
+ import { dateStr, fmtTime, mondayOf, toMin } from "@/components/WeekCalendar";
++import type { AuditEntry } from "@/lib/types";
+ 
+ type Shift = ResourceShift & {
+-  departmentName: string;
++  teamName: string;
+   status: string;
+   parentShiftId: number;
+ };
+@@ -33,7 +34,7 @@ type Block = {
+   taken: boolean;
+ };
+ 
+-type Student = {
++type Worker = {
+   id: number;
+   email: string;
+   name: string;
+@@ -94,26 +95,27 @@ const buildBlocks = (group: Shift[]): Block[] => {
+   return blocks;
+ };
+ 
+-export default function SchedulerCalendarPage() {
++export default function ManagerCalendarPage() {
+   const [token, setToken] = useState<string | null>(null);
+   const [email, setEmail] = useState("");
+   const [shifts, setShifts] = useState<Shift[]>([]);
+-  const [students, setStudents] = useState<Student[]>([]);
++  const [workers, setWorkers] = useState<Worker[]>([]);
+   const [anchor, setAnchor] = useState(() => dateStr(new Date()));
+   // Workers (by id) currently hidden from the view; open shifts toggle separately.
+   const [hiddenWorkers, setHiddenWorkers] = useState<Set<number>>(new Set());
+   const [hideOpen, setHideOpen] = useState(false);
+   // The open shift currently being assigned, if any.
+   const [assigning, setAssigning] = useState<Shift | null>(null);
++  const [shiftAudit, setShiftAudit] = useState<AuditEntry[]>([]);
+   // Selected worker in the assign modal (0 = unassigned). For hourly workers,
+-  // the scheduler checks one or more 2-hour blocks to assign.
++  // the manager checks one or more 2-hour blocks to assign.
+   const [selectedId, setSelectedId] = useState(0);
+   const [selectedBlocks, setSelectedBlocks] = useState<Set<string>>(new Set());
+ 
+   const load = useCallback(async (authToken: string, date: string) => {
+     const res = await callApi<{ shifts: Shift[] }>(
+       authToken,
+-      `/api/scheduler/calendar?date=${date}`,
++      `/api/calendar?date=${date}`,
+       "GET",
+       undefined,
+       false,
+@@ -121,15 +123,15 @@ export default function SchedulerCalendarPage() {
+     if (res) setShifts(res.shifts ?? []);
+   }, []);
+ 
+-  const loadStudents = useCallback(async (authToken: string) => {
+-    const res = await callApi<{ students: Student[] }>(
++  const loadWorkers = useCallback(async (authToken: string) => {
++    const res = await callApi<{ workers: Worker[] }>(
+       authToken,
+-      "/api/students",
++      "/api/workers",
+       "GET",
+       undefined,
+       false,
+     );
+-    if (res) setStudents(res.students ?? []);
++    if (res) setWorkers(res.workers ?? []);
+   }, []);
+ 
+   useEffect(() => {
+@@ -157,10 +159,10 @@ export default function SchedulerCalendarPage() {
+         return;
+       }
+       setEmail(me.user.email);
+-      await Promise.all([load(stored, anchor), loadStudents(stored)]);
++      await Promise.all([load(stored, anchor), loadWorkers(stored)]);
+     })();
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [load, loadStudents]);
++  }, [load, loadWorkers]);
+ 
+   const move = (days: number) => {
+     const monday = mondayOf(anchor);
+@@ -183,7 +185,7 @@ export default function SchedulerCalendarPage() {
+   };
+ 
+   // All workers with shifts this week, for the filter chips.
+-  const workers = useMemo(() => {
++  const shiftWorkers = useMemo(() => {
+     const map = new Map<number, string>();
+     for (const s of shifts) {
+       if (s.assignedUserId !== 0 && !map.has(s.assignedUserId)) {
+@@ -236,10 +238,21 @@ export default function SchedulerCalendarPage() {
+     );
+     if (res) {
+       setAssigning(null);
+-      await Promise.all([load(token, anchor), loadStudents(token)]);
++      await Promise.all([load(token, anchor), loadWorkers(token)]);
+     }
+   };
+ 
++  const loadShiftAudit = async (authToken: string, shiftId: number) => {
++    const res = await callApi<{ entries: AuditEntry[] }>(
++      authToken,
++      `/api/audit?entityType=workqueue&entityId=${shiftId}`,
++      "GET",
++      undefined,
++      false,
++    );
++    if (res) setShiftAudit(res.entries ?? []);
++  };
++
+   const openAssign = (shift: Shift) => {
+     setAssigning(shift);
+     setSelectedId(shift.assignedUserId || 0);
+@@ -249,6 +262,9 @@ export default function SchedulerCalendarPage() {
+     setSelectedBlocks(
+       new Set(shift.assignedUserId === 0 ? [shift.startTime] : []),
+     );
++    // Show who has acted on this shift while the manager works on it.
++    setShiftAudit([]);
++    if (token) void loadShiftAudit(token, shift.id);
+   };
+ 
+   // The full shift the modal is operating on: the clicked row plus any rows
+@@ -280,8 +296,8 @@ export default function SchedulerCalendarPage() {
+       }, 0)
+     : 0;
+ 
+-  const eligibleStudents = assigning
+-    ? students.filter(
++  const eligibleWorkers = assigning
++    ? workers.filter(
+         (st) =>
+           st.id === assigning.assignedUserId || // always keep the current assignee selectable
+           st.weekHoursUsed + assignHours <= st.weekHoursCap,
+@@ -309,13 +325,14 @@ export default function SchedulerCalendarPage() {
+       <div className="with-sidebar">
+         <nav className="sidebar">
+           <a href="/manager">Back to schedule</a>
++          <a href="/audit">Audit Report</a>
+           <a className="logout-link" href="/" onClick={logout}>
+             Logout
+           </a>
+         </nav>
+         <div className="cal-content">
+           <div className="res-filter">
+-            {workers.map(([id, name]) => {
++            {shiftWorkers.map(([id, name]) => {
+               const active = !hiddenWorkers.has(id);
+               return (
+                 <button
+@@ -406,9 +423,9 @@ export default function SchedulerCalendarPage() {
+               <form className="modal-form" onSubmit={submitAssign}>
+                 <p className="section-hint">
+                   {assigning.date} · {fmtTime(assigning.startTime)}–
+-                  {fmtTime(assigning.endTime)} · {assigning.departmentName}
++                  {fmtTime(assigning.endTime)} · {assigning.teamName}
+                 </p>
+-                {eligibleStudents.length === 0 && (
++                {eligibleWorkers.length === 0 && (
+                   <p className="section-hint">
+                     No other workers available (all at their weekly hour cap).
+                   </p>
+@@ -419,7 +436,7 @@ export default function SchedulerCalendarPage() {
+                   onChange={(e) => setSelectedId(Number(e.target.value))}
+                 >
+                   <option value="">Unassigned</option>
+-                  {eligibleStudents.map((st) => (
++                  {eligibleWorkers.map((st) => (
+                     <option key={st.id} value={st.id}>
+                       {st.name || st.email} ({st.weekHoursUsed}/
+                       {st.weekHoursCap}h)
+@@ -487,12 +504,26 @@ export default function SchedulerCalendarPage() {
+                   {assigning.assignedUserId ? "Reassign" : "Assign"}
+                 </button>
+               </form>
++              <div style={{ marginTop: 16 }}>
++                <div className="modal-label">Recent activity</div>
++                {shiftAudit.length === 0 && (
++                  <p className="section-hint">
++                    No recorded activity for this shift in the last 15 days.
++                  </p>
++                )}
++                {shiftAudit.map((e) => (
++                  <p key={e.id} className="section-hint">
++                    {e.action} · {e.actorEmail ?? "—"} ·{" "}
++                    {new Date(e.createdAt).toLocaleString()}
++                  </p>
++                ))}
++              </div>
+             </Modal>
+           )}
+         </div>
+       </div>
+ 
+-      <PageFooter meta={<span>Scheduler calendar</span>} />
++      <PageFooter meta={<span>Manager calendar</span>} />
+     </div>
+   );
+ }
+diff --git a/frontend/app/(app)/dashboard/page.tsx b/frontend/app/(app)/dashboard/page.tsx
+index 3583a1c..07d8946 100644
+--- a/frontend/app/(app)/dashboard/page.tsx
++++ b/frontend/app/(app)/dashboard/page.tsx
+@@ -24,6 +24,7 @@ type MeUser = {
+   id: number;
+   email: string;
+   role: string;
++  roles: string[];
+   emailVerified: boolean;
+   mustChangePassword?: boolean;
+   hasProfile?: boolean;
+@@ -33,6 +34,7 @@ type UserRow = {
+   id: number;
+   email: string;
+   role: string;
++  roles: string[];
+   emailVerified: boolean;
+ };
+ 
+@@ -191,7 +193,8 @@ export default function DashboardPage() {
+         }
+         setMe(user);
+ 
+-        // Route by role: students/managers/admins get their own schedule pages.
++        // Route by role: each role gets its own page (the old scheduler role
++        // is merged into manager).
+         if (user.role === "student") {
+           window.location.href = "/student";
+           return;
+@@ -200,7 +203,7 @@ export default function DashboardPage() {
+           window.location.href = "/staff";
+           return;
+         }
+-        if (user.role === "manager" || user.role === "scheduler") {
++        if (user.role === "manager") {
+           window.location.href = "/manager";
+           return;
+         }
+@@ -317,17 +320,21 @@ export default function DashboardPage() {
+     { key: "email", label: "Email", sortable: true },
+     {
+       key: "role",
+-      label: "Role",
++      label: "Roles",
+       sortable: true,
+       render: (u) =>
+         isAdmin && u.id !== me?.id ? (
+           <select
+             key={u.role}
+-            defaultValue={u.role}
++            multiple
++            size={Math.min(u.roles?.length ?? 1, ROLES.length)}
++            defaultValue={u.roles}
+             onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+               withToken(async (authToken) => {
+                 await callApi(authToken, `/api/users/${u.id}/role`, "PATCH", {
+-                  role: event.target.value,
++                  roles: Array.from(event.target.selectedOptions).map(
++                    (o) => o.value,
++                  ),
+                 });
+                 await loadUsers(authToken);
+               })
+@@ -340,7 +347,7 @@ export default function DashboardPage() {
+             ))}
+           </select>
+         ) : (
+-          u.role
++          (u.roles ?? []).join(", ")
+         ),
+     },
+     {
+@@ -422,7 +429,7 @@ export default function DashboardPage() {
+           <span>
+             Role:{" "}
+             <span id="user-role" className="highlight">
+-              {me?.role ?? "..."}
++              {me ? (me.roles ?? [me.role]).join(", ") : "..."}
+             </span>{" "}
+             · Email verified:{" "}
+             <span id="user-verified" className="highlight">
+diff --git a/frontend/app/(app)/manager/page.tsx b/frontend/app/(app)/manager/page.tsx
+index 6bb6d34..bd9e78e 100644
+--- a/frontend/app/(app)/manager/page.tsx
++++ b/frontend/app/(app)/manager/page.tsx
+@@ -9,23 +9,23 @@ import { Modal } from "@/components/Modal";
+ import { JobModal, type JobInput } from "@/components/JobModal";
+ import { AIAssistantPanel } from "@/components/AIAssistantPanel";
+ import { fmtTime } from "@/components/WeekCalendar";
+-import { hasRole } from "@/lib/roles";
++import { hasAnyRole, hasRole } from "@/lib/roles";
+ import { useSortablePage } from "@/lib/pagination";
+ import { DataGrid, type Column } from "@/components/DataGrid";
+-import type { Department, Job, Preference, Request, Shift } from "@/lib/types";
++import type { Job, Preference, Request, Shift, Team } from "@/lib/types";
+ 
+-type StudentJob = {
++type WorkerJob = {
+   jobId: number;
+   jobName: string;
++  teamId: number;
++  teamName: string;
+   departmentId: number;
+-  departmentName: string;
+-  locationId: number;
+   minHours: number;
+   maxHours: number;
+   active: boolean;
+ };
+ 
+-type Student = {
++type Worker = {
+   id: number;
+   email: string;
+   disabled: boolean;
+@@ -34,7 +34,7 @@ type Student = {
+   hourlyLimit: number;
+   weekHoursCap: number;
+   weekHoursUsed: number;
+-  jobs: StudentJob[];
++  jobs: WorkerJob[];
+ };
+ 
+ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+@@ -49,28 +49,28 @@ export default function ManagerPage() {
+   const [token, setToken] = useState<string | null>(null);
+   const [email, setEmail] = useState("");
+   const [role, setRole] = useState<string>("");
+-  const [students, setStudents] = useState<Student[]>([]);
++  const [roles, setRoles] = useState<string[]>([]);
++  const [workers, setWorkers] = useState<Worker[]>([]);
+   const [jobs, setJobs] = useState<Job[]>([]);
+   const [shifts, setShifts] = useState<Shift[]>([]);
+-  const [departments, setDepartments] = useState<Department[]>([]);
++  const [teams, setTeams] = useState<Team[]>([]);
+   const [requests, setRequests] = useState<Request[]>([]);
+-  const [studentModal, setStudentModal] = useState<Student | null>(null);
++  const [workerEditModal, setWorkerEditModal] = useState<Worker | null>(null);
+   const [jobModal, setJobModal] = useState<Job | null>(null);
+   const [workqueueModal, setWorkqueueModal] = useState(false);
+   const [workerModal, setWorkerModal] = useState(false);
+   const [workerShifts, setWorkerShifts] = useState<Shift[]>([]);
+   const [workerPrefs, setWorkerPrefs] = useState<Preference[]>([]);
+ 
+-  // Schedulers (and admins) can assign shifts to workers; managers set up jobs.
+-  const canAssign = hasRole(role, "scheduler");
+-  // Managers and admins create/edit jobs; schedulers only view them.
+-  const canManageJobs = role === "manager" || role === "admin";
++  // Any manager (or admin) can assign shifts; the server scopes each manager
++  // to their own departments/teams.
++  const canAssign = hasRole(role, "manager");
++  // Managers and admins create/edit jobs; the server enforces the
++  // department-level rule. Membership check so any multi-role holder gets
++  // job management.
++  const canManageJobs = hasAnyRole(roles, "manager", "admin");
+ 
+-  const studentsGrid = useSortablePage<Student>(
+-    students,
+-    (s) => s.email,
+-    "email",
+-  );
++  const workersGrid = useSortablePage<Worker>(workers, (s) => s.email, "email");
+   const jobsGrid = useSortablePage<Job>(
+     jobs,
+     (j, key) => {
+@@ -90,7 +90,7 @@ export default function ManagerPage() {
+     "date",
+   );
+ 
+-  const studentColumns: Column<Student>[] = [
++  const workerColumns: Column<Worker>[] = [
+     { key: "email", label: "Email", sortable: true },
+     { key: "workerTypeLabel", label: "Type", sortable: true },
+     {
+@@ -110,7 +110,7 @@ export default function ManagerPage() {
+         <button
+           type="button"
+           onClick={() => {
+-            setStudentModal(s);
++            setWorkerEditModal(s);
+             loadWorkerCalendar(s.id);
+             loadWorkerPrefs(s.id);
+           }}
+@@ -123,7 +123,7 @@ export default function ManagerPage() {
+ 
+   const jobColumns: Column<Job>[] = [
+     { key: "name", label: "Job", sortable: true },
+-    { key: "departmentName", label: "Department", sortable: true },
++    { key: "teamName", label: "Team", sortable: true },
+     ...DAYS.map((d, dow) => ({
+       label: d,
+       render: (j: Job) => {
+@@ -158,7 +158,7 @@ export default function ManagerPage() {
+   ];
+ 
+   const shiftColumns: Column<Shift>[] = [
+-    { key: "departmentName", label: "Department", sortable: true },
++    { key: "teamName", label: "Team", sortable: true },
+     { key: "date", label: "Date", sortable: true },
+     {
+       key: "startTime",
+@@ -184,7 +184,7 @@ export default function ManagerPage() {
+               >
+                 <select name="userId" defaultValue={sh.assignedUserId ?? ""}>
+                   <option value="">Unassigned</option>
+-                  {students
++                  {workers
+                     .filter(
+                       (st) =>
+                         st.id === sh.assignedUserId ||
+@@ -246,10 +246,10 @@ export default function ManagerPage() {
+   ];
+ 
+   const load = useCallback(async (authToken: string) => {
+-    const [s, j, sh, d, r] = await Promise.all([
+-      callApi<{ students: Student[] }>(
++    const [w, j, sh, t, r] = await Promise.all([
++      callApi<{ workers: Worker[] }>(
+         authToken,
+-        "/api/students",
++        "/api/workers",
+         "GET",
+         undefined,
+         false,
+@@ -262,9 +262,9 @@ export default function ManagerPage() {
+         undefined,
+         false,
+       ),
+-      callApi<{ departments: Department[] }>(
++      callApi<{ teams: Team[] }>(
+         authToken,
+-        "/api/departments",
++        "/api/teams",
+         "GET",
+         undefined,
+         false,
+@@ -277,10 +277,10 @@ export default function ManagerPage() {
+         false,
+       ),
+     ]);
+-    if (s) setStudents(s.students ?? []);
++    if (w) setWorkers(w.workers ?? []);
+     if (j) setJobs(j.jobs ?? []);
+     if (sh) setShifts(sh.shifts ?? []);
+-    if (d) setDepartments(d.departments ?? []);
++    if (t) setTeams(t.teams ?? []);
+     if (r) setRequests(r.requests ?? []);
+   }, []);
+ 
+@@ -292,28 +292,21 @@ export default function ManagerPage() {
+         return;
+       }
+       setToken(stored);
+-      const me = await callApi<{ user: { email: string; role: string } }>(
+-        stored,
+-        "/api/me",
+-        "GET",
+-        undefined,
+-        false,
+-      );
++      const me = await callApi<{
++        user: { email: string; role: string; roles?: string[] };
++      }>(stored, "/api/me", "GET", undefined, false);
+       if (!me) {
+         localStorage.removeItem("auth_token");
+         window.location.href = "/";
+         return;
+       }
+-      if (
+-        me.user.role !== "manager" &&
+-        me.user.role !== "scheduler" &&
+-        me.user.role !== "admin"
+-      ) {
++      if (me.user.role !== "manager" && me.user.role !== "admin") {
+         window.location.href = "/dashboard";
+         return;
+       }
+       setEmail(me.user.email);
+       setRole(me.user.role);
++      setRoles(me.user.roles ?? [me.user.role]);
+       await load(stored);
+     })();
+   }, [load]);
+@@ -341,7 +334,7 @@ export default function ManagerPage() {
+ 
+   const saveAssignment = (event: FormEvent<HTMLFormElement>) => {
+     event.preventDefault();
+-    if (!studentModal) return;
++    if (!workerEditModal) return;
+     const data = new FormData(event.currentTarget);
+     const body: Record<string, unknown> = {};
+     for (const [k, v] of data.entries()) body[k] = v;
+@@ -349,18 +342,18 @@ export default function ManagerPage() {
+     body.jobId = Number(data.get("jobId"));
+     body.minHours = Number(data.get("minHours"));
+     body.maxHours = Number(data.get("maxHours"));
+-    act(`/api/students/${studentModal.id}/jobs`, body);
++    act(`/api/workers/${workerEditModal.id}/jobs`, body);
+   };
+ 
+   const saveWorkerDetails = (event: FormEvent<HTMLFormElement>) => {
+     event.preventDefault();
+-    if (!studentModal) return;
++    if (!workerEditModal) return;
+     const data = new FormData(event.currentTarget);
+     const workerType = String(data.get("workerType"));
+     let hourlyLimit = Number(data.get("hourlyLimit")) || 0;
+     if (workerType !== "hourly") hourlyLimit = 0;
+     act(
+-      `/api/users/${studentModal.id}/worker`,
++      `/api/users/${workerEditModal.id}/worker`,
+       {
+         workerType,
+         hourlyLimit: hourlyLimit || null,
+@@ -382,8 +375,12 @@ export default function ManagerPage() {
+   };
+ 
+   const removeJob = (jobId: number) => {
+-    if (!studentModal) return;
+-    act(`/api/students/${studentModal.id}/jobs/${jobId}`, undefined, "DELETE");
++    if (!workerEditModal) return;
++    act(
++      `/api/workers/${workerEditModal.id}/jobs/${jobId}`,
++      undefined,
++      "DELETE",
++    );
+   };
+ 
+   const loadWorkerCalendar = async (id: number) => {
+@@ -412,13 +409,13 @@ export default function ManagerPage() {
+ 
+   const saveSchedule = (event: FormEvent<HTMLFormElement>) => {
+     event.preventDefault();
+-    if (!studentModal) return;
++    if (!workerEditModal) return;
+     const data = new FormData(event.currentTarget);
+     const body: Record<string, unknown> = {};
+     for (const [k, v] of data.entries()) body[k] = v;
+     body.jobId = Number(data.get("jobId"));
+     body.dayOfWeek = Number(data.get("dayOfWeek"));
+-    act(`/api/students/${studentModal.id}/schedule`, body);
++    act(`/api/workers/${workerEditModal.id}/schedule`, body);
+     event.currentTarget.reset();
+   };
+ 
+@@ -427,7 +424,7 @@ export default function ManagerPage() {
+     const data = new FormData(event.currentTarget);
+     const body: Record<string, unknown> = {};
+     for (const [k, v] of data.entries()) body[k] = v;
+-    body.departmentId = Number(data.get("departmentId"));
++    body.teamId = Number(data.get("teamId"));
+     act("/api/workqueue", body);
+     setWorkqueueModal(false);
+   };
+@@ -435,7 +432,7 @@ export default function ManagerPage() {
+   const saveJob = (data: JobInput) => {
+     const body: Record<string, unknown> = {
+       name: data.name,
+-      departmentId: data.departmentId,
++      teamId: data.teamId,
+       optimalWorkers: data.optimalWorkers,
+       schedules: data.schedules.map((s) => ({
+         dayOfWeek: s.dayOfWeek,
+@@ -482,17 +479,18 @@ export default function ManagerPage() {
+ 
+       <div className="with-sidebar">
+         <nav className="sidebar">
+-          <a href="/scheduler/calendar">Calendar view</a>
+-          <a href="#students">Workers</a>
++          <a href="/calendar">Calendar view</a>
++          <a href="#workers">Workers</a>
+           <a href="#jobs">Job Requirements</a>
+           <a href="#workqueue">Workqueue</a>
+           <a href="#requests">Requests</a>
++          <a href="/audit">Audit Report</a>
+           <a className="logout-link" href="/" onClick={logout}>
+             Logout
+           </a>
+         </nav>
+         <div className="dashboard-card">
+-          <div className="user-list-section" id="students">
++          <div className="user-list-section" id="workers">
+             <div className="section-title-row">
+               <h2>Workers</h2>
+               {canManageJobs && (
+@@ -511,10 +509,10 @@ export default function ManagerPage() {
+               manager-set limit. Overtime needs manager approval.
+             </p>
+             <DataGrid
+-              grid={studentsGrid}
+-              columns={studentColumns}
++              grid={workersGrid}
++              columns={workerColumns}
+               getRowKey={(s) => s.id}
+-              emptyText="No workers in your location."
++              emptyText="No workers in your teams."
+             />
+           </div>
+ 
+@@ -529,10 +527,10 @@ export default function ManagerPage() {
+                     setJobModal({
+                       id: 0,
+                       name: "",
++                      teamId: 0,
++                      teamName: "",
+                       departmentId: 0,
+                       departmentName: "",
+-                      locationId: 0,
+-                      locationName: "",
+                       optimalWorkers: 1,
+                       currentWorkers: 0,
+                       weeklyHours: 0,
+@@ -547,14 +545,14 @@ export default function ManagerPage() {
+             </div>
+             <p className="section-hint">
+               Daily operating hours, the weekly hour requirement, and staff
+-              coverage (current / optimal) for each job in your location. Days
+-              with no hours are closed (weekend, holiday).
++              coverage (current / optimal) for each job in your teams. Days with
++              no hours are closed (weekend, holiday).
+             </p>
+             <DataGrid
+               grid={jobsGrid}
+               columns={jobColumns}
+               getRowKey={(j) => j.id}
+-              emptyText="No jobs in your location."
++              emptyText="No jobs in your teams."
+             />
+           </div>
+ 
+@@ -570,9 +568,7 @@ export default function ManagerPage() {
+               </button>
+             </div>
+             <p className="section-hint">
+-              {role === "scheduler"
+-                ? "All slots in your department."
+-                : "All slots in your location."}{" "}
++              All slots in your teams.{" "}
+               {canAssign
+                 ? "Assign a slot to a worker (or unassign it) to build the schedule."
+                 : "Open shifts students can pick from, or return missed shifts here."}
+@@ -597,10 +593,10 @@ export default function ManagerPage() {
+         </div>
+       </div>
+ 
+-      {studentModal && (
++      {workerEditModal && (
+         <Modal
+-          title={`Edit ${studentModal.email}`}
+-          onClose={() => setStudentModal(null)}
++          title={`Edit ${workerEditModal.email}`}
++          onClose={() => setWorkerEditModal(null)}
+         >
+           <div className="modal-form">
+             <h4>This Week's Schedule</h4>
+@@ -612,7 +608,7 @@ export default function ManagerPage() {
+                   <li key={sh.id}>
+                     <span>
+                       {sh.date} · {fmtTime(sh.startTime)}–{fmtTime(sh.endTime)}{" "}
+-                      · {sh.departmentName}
++                      · {sh.teamName}
+                     </span>
+                   </li>
+                 ))}
+@@ -626,8 +622,8 @@ export default function ManagerPage() {
+               <p className="section-hint">No preferred times set.</p>
+             ) : (
+               <ul className="job-list">
+-                {workerPrefs.map((p, i) => (
+-                  <li key={i}>
++                {workerPrefs.map((p) => (
++                  <li key={p.id}>
+                     <span>
+                       {DAYS[p.dayOfWeek]} · {fmtTime(p.startTime)}–
+                       {fmtTime(p.endTime)}
+@@ -640,16 +636,16 @@ export default function ManagerPage() {
+ 
+           <div className="modal-form">
+             <h4>Current Jobs</h4>
+-            {studentModal.jobs.length === 0 ? (
++            {workerEditModal.jobs.length === 0 ? (
+               <p className="section-hint">No jobs assigned yet.</p>
+             ) : (
+               <ul className="job-list">
+-                {studentModal.jobs.map((j) => (
++                {workerEditModal.jobs.map((j) => (
+                   <li key={j.jobId}>
+                     <span>
+                       {j.jobName}{" "}
+                       <em>
+-                        ({j.departmentName} · {j.minHours}–{j.maxHours}h)
++                        ({j.teamName} · {j.minHours}–{j.maxHours}h)
+                       </em>
+                     </span>
+                     <button
+@@ -671,7 +667,7 @@ export default function ManagerPage() {
+               Weekly hours: student 20; full-time 40 (+20 overtime); hourly
+               manager-set limit. Overtime needs manager approval.
+             </p>
+-            <select name="workerType" defaultValue={studentModal.workerType}>
++            <select name="workerType" defaultValue={workerEditModal.workerType}>
+               <option value="student">Student (20 hrs/wk)</option>
+               <option value="fulltime">Full-time staff (40 + 20 ot)</option>
+               <option value="hourly">Hourly staff (set limit)</option>
+@@ -684,8 +680,8 @@ export default function ManagerPage() {
+                 min={1}
+                 max={40}
+                 defaultValue={
+-                  studentModal.workerType === "hourly"
+-                    ? studentModal.hourlyLimit
++                  workerEditModal.workerType === "hourly"
++                    ? workerEditModal.hourlyLimit
+                     : 40
+                 }
+               />
+@@ -702,7 +698,7 @@ export default function ManagerPage() {
+             <select name="jobId" required>
+               {jobs.map((j) => (
+                 <option key={j.id} value={j.id}>
+-                  {j.name} ({j.departmentName})
++                  {j.name} ({j.teamName})
+                 </option>
+               ))}
+             </select>
+@@ -732,7 +728,7 @@ export default function ManagerPage() {
+           <form className="modal-form" onSubmit={saveSchedule}>
+             <h4>Add Weekly Schedule</h4>
+             <select name="jobId" required>
+-              {studentModal.jobs.map((j) => (
++              {workerEditModal.jobs.map((j) => (
+                 <option key={j.jobId} value={j.jobId}>
+                   {j.jobName}
+                 </option>
+@@ -758,7 +754,7 @@ export default function ManagerPage() {
+             <button
+               type="button"
+               className="cancel-button"
+-              onClick={() => setStudentModal(null)}
++              onClick={() => setWorkerEditModal(null)}
+             >
+               Close
+             </button>
+@@ -795,7 +791,7 @@ export default function ManagerPage() {
+             <select name="jobId" required>
+               {jobs.map((j) => (
+                 <option key={j.id} value={j.id}>
+-                  {j.name} ({j.departmentName})
++                  {j.name} ({j.teamName})
+                 </option>
+               ))}
+             </select>
+@@ -837,8 +833,8 @@ export default function ManagerPage() {
+           onClose={() => setWorkqueueModal(false)}
+         >
+           <form className="modal-form" onSubmit={saveWorkqueue}>
+-            <select name="departmentId" required>
+-              {departments.map((d) => (
++            <select name="teamId" required>
++              {teams.map((d) => (
+                 <option key={d.id} value={d.id}>
+                   {d.name}
+                 </option>
+@@ -866,7 +862,7 @@ export default function ManagerPage() {
+       {jobModal && (
+         <JobModal
+           job={jobModal.id > 0 ? jobModal : null}
+-          departments={departments}
++          teams={teams}
+           onSave={saveJob}
+           onClose={() => setJobModal(null)}
+         />
+diff --git a/frontend/app/(app)/staff/page.tsx b/frontend/app/(app)/staff/page.tsx
+index c19dd0f..b1a1b68 100644
+--- a/frontend/app/(app)/staff/page.tsx
++++ b/frontend/app/(app)/staff/page.tsx
+@@ -130,7 +130,7 @@ export default function StaffPage() {
+       sortable: true,
+       render: (s) => fmtTime(s.endTime),
+     },
+-    { key: "departmentName", label: "Department", sortable: true },
++    { key: "teamName", label: "Team", sortable: true },
+     { label: "", render: action },
+   ];
+ 
+@@ -215,7 +215,7 @@ export default function StaffPage() {
+               grid={workqueueGrid}
+               columns={workqueueColumns}
+               getRowKey={(s) => s.id}
+-              emptyText="No open shifts in your department."
++              emptyText="No open shifts in your teams."
+             />
+           </div>
+ 
+diff --git a/frontend/app/(app)/student/calendar/page.tsx b/frontend/app/(app)/student/calendar/page.tsx
+index f8fc487..e81057c 100644
+--- a/frontend/app/(app)/student/calendar/page.tsx
++++ b/frontend/app/(app)/student/calendar/page.tsx
+@@ -14,7 +14,7 @@ import {
+ } from "@/components/WeekCalendar";
+ 
+ type Shift = CalendarShift & {
+-  departmentName: string;
++  teamName: string;
+ };
+ 
+ export default function CalendarPage() {
+@@ -117,7 +117,7 @@ export default function CalendarPage() {
+                   <span className="cal-shift-time">
+                     {fmtTime(shift.startTime)}–{fmtTime(shift.endTime)}
+                   </span>
+-                  <span className="cal-shift-dept">{shift.departmentName}</span>
++                  <span className="cal-shift-dept">{shift.teamName}</span>
+                 </div>
+               );
+             }}
+diff --git a/frontend/app/(app)/student/page.tsx b/frontend/app/(app)/student/page.tsx
+index 0e769bc..1887b4f 100644
+--- a/frontend/app/(app)/student/page.tsx
++++ b/frontend/app/(app)/student/page.tsx
+@@ -167,7 +167,7 @@ export default function StudentPage() {
+       sortable: true,
+       render: (s) => fmtTime(s.endTime),
+     },
+-    { key: "departmentName", label: "Department", sortable: true },
++    { key: "teamName", label: "Team", sortable: true },
+     { label: "", render: action },
+   ];
+ 
+@@ -253,7 +253,7 @@ export default function StudentPage() {
+               grid={workqueueGrid}
+               columns={workqueueColumns}
+               getRowKey={(s) => s.id}
+-              emptyText="No open shifts in your department."
++              emptyText="No open shifts in your teams."
+             />
+           </div>
+ 
+@@ -273,7 +273,7 @@ export default function StudentPage() {
+               <DataGrid
+                 grid={preferencesGrid}
+                 columns={prefColumns}
+-                getRowKey={(p) => p.dayOfWeek}
++                getRowKey={(p) => p.id}
+               />
+             )}
+             <form className="add-user-form" onSubmit={handlePreference}>
+diff --git a/frontend/components/JobModal.tsx b/frontend/components/JobModal.tsx
+index 6d572d1..8eada4c 100644
+--- a/frontend/components/JobModal.tsx
++++ b/frontend/components/JobModal.tsx
+@@ -16,7 +16,7 @@ export type JobHolidayInput = {
+ export type JobInput = {
+   id?: number;
+   name: string;
+-  departmentId: number;
++  teamId: number;
+   optimalWorkers: number;
+   schedules: JobScheduleInput[];
+   holidays: JobHolidayInput[];
+@@ -44,19 +44,17 @@ const DEFAULT_SCHEDULES: Record<
+ // holiday lists can be added/removed before submitting.
+ export function JobModal({
+   job,
+-  departments,
++  teams,
+   onSave,
+   onClose,
+ }: {
+   job: JobInput | null;
+-  departments: { id: number; name: string; locationName: string }[];
++  teams: { id: number; name: string; departmentName: string }[];
+   onSave: (data: JobInput) => void;
+   onClose: () => void;
+ }) {
+   const [name, setName] = useState(job?.name ?? "");
+-  const [departmentId, setDepartmentId] = useState<number>(
+-    job?.departmentId ?? 0,
+-  );
++  const [teamId, setTeamId] = useState<number>(job?.teamId ?? 0);
+   const [optimalWorkers, setOptimalWorkers] = useState(
+     job?.optimalWorkers ?? 1,
+   );
+@@ -108,7 +106,7 @@ export function JobModal({
+     onSave({
+       ...(job?.id ? { id: job.id } : {}),
+       name: name.trim(),
+-      departmentId,
++      teamId,
+       optimalWorkers: optimalWorkers || 1,
+       schedules: schedules.filter((s): s is JobScheduleInput => s !== null),
+       holidays,
+@@ -127,17 +125,17 @@ export function JobModal({
+           onChange={(e) => setName(e.target.value)}
+         />
+         <select
+-          name="departmentId"
++          name="teamId"
+           required
+-          value={departmentId}
+-          onChange={(e) => setDepartmentId(Number(e.target.value))}
++          value={teamId}
++          onChange={(e) => setTeamId(Number(e.target.value))}
+         >
+           <option value={0} disabled>
+-            Select department
++            Select team
+           </option>
+-          {departments.map((d) => (
++          {teams.map((d) => (
+             <option key={d.id} value={d.id}>
+-              {d.name} ({d.locationName})
++              {d.name} ({d.departmentName})
+             </option>
+           ))}
+         </select>
+diff --git a/frontend/components/ResourceCalendar.tsx b/frontend/components/ResourceCalendar.tsx
+index eb398b6..f202124 100644
+--- a/frontend/components/ResourceCalendar.tsx
++++ b/frontend/components/ResourceCalendar.tsx
+@@ -8,7 +8,7 @@ const HOUR_W = 60; // px per hour across the top
+ const ROW_H = 40; // px per worker row
+ 
+ // A shift as the resource calendar needs it. Callers may extend this type with
+-// extra fields (e.g. departmentName) and read them inside renderShift.
++// extra fields (e.g. teamName) and read them inside renderShift.
+ export type ResourceShift = {
+   id: number;
+   date: string;
+diff --git a/frontend/components/WeekCalendar.tsx b/frontend/components/WeekCalendar.tsx
+index a95dd97..90c774a 100644
+--- a/frontend/components/WeekCalendar.tsx
++++ b/frontend/components/WeekCalendar.tsx
+@@ -3,7 +3,7 @@
+ import type { CSSProperties, ReactNode } from "react";
+ 
+ // A shift as the calendar grid needs it. Callers may extend this type with
+-// extra fields (e.g. departmentName) and read them inside renderShift.
++// extra fields (e.g. teamName) and read them inside renderShift.
+ export type CalendarShift = {
+   id: number;
+   date: string;
+@@ -96,8 +96,8 @@ function layoutDay(
+ 
+ // Shared week-grid calendar. The time axis, day columns, and gridlines are
+ // rendered here; each shift block is delegated to renderShift so callers can
+-// style it differently (e.g. a student's own shifts vs. a scheduler's
+-// department coverage view).
++// style it differently (e.g. a student's own shifts vs. a manager's
++// team coverage view).
+ export function WeekCalendar({
+   shifts,
+   anchor,
+diff --git a/frontend/lib/roles.ts b/frontend/lib/roles.ts
+index 55311a8..7c5633e 100644
+--- a/frontend/lib/roles.ts
++++ b/frontend/lib/roles.ts
+@@ -1,11 +1,7 @@
+-// Ranked lowest to highest: a role satisfies a check for itself or anything below it.
+-export const ROLES = [
+-  "student",
+-  "staff",
+-  "manager",
+-  "scheduler",
+-  "admin",
+-] as const;
++// Ranked lowest to highest: a role satisfies a check for itself or anything
++// below it. Single manager role — the old scheduler role is gone (schedulers
++// merged into manager; department-level scoping is structural on the backend).
++export const ROLES = ["student", "staff", "manager", "admin"] as const;
+ 
+ export type Role = (typeof ROLES)[number];
+ 
+@@ -14,3 +10,13 @@ export function hasRole(userRole: string, minRole: Role): boolean {
+     (ROLES as readonly string[]).indexOf(userRole) >= ROLES.indexOf(minRole)
+   );
+ }
++
++// A user can hold multiple roles; this checks membership in the held set —
++// for gates the linear hierarchy doesn't fit (e.g. shift assignment is
++// any manager while job management is manager/admin).
++export function hasAnyRole(
++  userRoles: string[] | undefined,
++  ...want: Role[]
++): boolean {
++  return (userRoles ?? []).some((r) => (want as string[]).includes(r));
++}
+diff --git a/frontend/lib/types.ts b/frontend/lib/types.ts
+index 8f477e5..1b800bf 100644
+--- a/frontend/lib/types.ts
++++ b/frontend/lib/types.ts
+@@ -7,7 +7,7 @@ export type Shift = {
+   date: string;
+   startTime: string;
+   endTime: string;
+-  departmentName: string;
++  teamName: string;
+   status?: string;
+   assignedUserId?: number | null;
+   assignedEmail?: string | null;
+@@ -26,6 +26,7 @@ export type Request = {
+ };
+ 
+ export type Preference = {
++  id: number;
+   dayOfWeek: number;
+   startTime: string;
+   endTime: string;
+@@ -43,13 +44,15 @@ export type JobHoliday = {
+   reason?: string | null;
+ };
+ 
++// A job sits in a team, which sits in a department — responses carry both
++// levels.
+ export type Job = {
+   id: number;
+   name: string;
++  teamId: number;
++  teamName: string;
+   departmentId: number;
+   departmentName: string;
+-  locationId: number;
+-  locationName: string;
+   optimalWorkers: number;
+   currentWorkers: number;
+   weeklyHours: number;
+@@ -57,10 +60,37 @@ export type Job = {
+   holidays: JobHoliday[];
+ };
+ 
++// A department is a managed site (with an assigned manager); teams are the
++// working groups inside it.
+ export type Department = {
+   id: number;
+   name: string;
+-  locationId: number;
+-  locationName: string;
+-  departmentCode?: string | null;
++  abbreviation?: string | null;
++  address?: string | null;
++  address2?: string | null;
++  city?: string | null;
++  state?: string | null;
++  zip?: string | null;
++  country?: string | null;
++  managerId?: number | null;
++};
++
++export type Team = {
++  id: number;
++  name: string;
++  teamCode?: string | null;
++  departmentId: number;
++  departmentName: string;
++};
++
++export type AuditEntry = {
++  id: number;
++  actorId?: number | null;
++  actorEmail?: string | null;
++  action: string;
++  entityType: string;
++  entityId?: number | null;
++  teamName?: string | null;
++  details?: Record<string, unknown> | null;
++  createdAt: string;
+ };
