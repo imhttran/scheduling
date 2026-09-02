@@ -7,6 +7,7 @@ import { PageFooter } from "@/components/PageFooter";
 import { PageTitle } from "@/components/PageTitle";
 import { MissRequestModal } from "@/components/MissRequestModal";
 import { DataGrid, type Column } from "@/components/DataGrid";
+import { fmtTime } from "@/components/WeekCalendar";
 import { useSortablePage } from "@/lib/pagination";
 import type { Request, Shift } from "@/lib/types";
 
@@ -117,8 +118,18 @@ export default function StaffPage() {
 
   const shiftColumns = (action: (s: Shift) => ReactNode): Column<Shift>[] => [
     { key: "date", label: "Date", sortable: true },
-    { key: "startTime", label: "Start", sortable: true },
-    { key: "endTime", label: "End", sortable: true },
+    {
+      key: "startTime",
+      label: "Start",
+      sortable: true,
+      render: (s) => fmtTime(s.startTime),
+    },
+    {
+      key: "endTime",
+      label: "End",
+      sortable: true,
+      render: (s) => fmtTime(s.endTime),
+    },
     { key: "departmentName", label: "Department", sortable: true },
     { label: "", render: action },
   ];
@@ -135,8 +146,18 @@ export default function StaffPage() {
   ));
   const requestColumns: Column<Request>[] = [
     { key: "date", label: "Date", sortable: true },
-    { key: "startTime", label: "Start", sortable: true },
-    { key: "endTime", label: "End", sortable: true },
+    {
+      key: "startTime",
+      label: "Start",
+      sortable: true,
+      render: (r) => fmtTime(r.startTime),
+    },
+    {
+      key: "endTime",
+      label: "End",
+      sortable: true,
+      render: (r) => fmtTime(r.endTime),
+    },
     { key: "type", label: "Type", sortable: true },
     { key: "status", label: "Status", sortable: true },
     { key: "reason", label: "Reason", sortable: true },

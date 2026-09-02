@@ -8,6 +8,7 @@ import { PageTitle } from "@/components/PageTitle";
 import { Modal } from "@/components/Modal";
 import { JobModal, type JobInput } from "@/components/JobModal";
 import { AIAssistantPanel } from "@/components/AIAssistantPanel";
+import { fmtTime } from "@/components/WeekCalendar";
 import { hasRole } from "@/lib/roles";
 import { useSortablePage } from "@/lib/pagination";
 import { DataGrid, type Column } from "@/components/DataGrid";
@@ -127,7 +128,7 @@ export default function ManagerPage() {
       label: d,
       render: (j: Job) => {
         const s = j.schedules.find((x) => x.dayOfWeek === dow);
-        return s ? `${s.startTime}–${s.endTime}` : "—";
+        return s ? `${fmtTime(s.startTime)}–${fmtTime(s.endTime)}` : "—";
       },
     })),
     {
@@ -163,7 +164,7 @@ export default function ManagerPage() {
       key: "startTime",
       label: "Time",
       sortable: true,
-      render: (sh) => `${sh.startTime}–${sh.endTime}`,
+      render: (sh) => `${fmtTime(sh.startTime)}–${fmtTime(sh.endTime)}`,
     },
     { key: "status", label: "Status", sortable: true },
     {
@@ -214,7 +215,7 @@ export default function ManagerPage() {
       key: "startTime",
       label: "Time",
       sortable: true,
-      render: (r) => `${r.startTime}–${r.endTime}`,
+      render: (r) => `${fmtTime(r.startTime)}–${fmtTime(r.endTime)}`,
     },
     { key: "type", label: "Type", sortable: true },
     {
@@ -610,8 +611,8 @@ export default function ManagerPage() {
                 {workerShifts.map((sh) => (
                   <li key={sh.id}>
                     <span>
-                      {sh.date} · {sh.startTime}–{sh.endTime} ·{" "}
-                      {sh.departmentName}
+                      {sh.date} · {fmtTime(sh.startTime)}–{fmtTime(sh.endTime)}{" "}
+                      · {sh.departmentName}
                     </span>
                   </li>
                 ))}
@@ -628,7 +629,8 @@ export default function ManagerPage() {
                 {workerPrefs.map((p, i) => (
                   <li key={i}>
                     <span>
-                      {DAYS[p.dayOfWeek]} · {p.startTime}–{p.endTime}
+                      {DAYS[p.dayOfWeek]} · {fmtTime(p.startTime)}–
+                      {fmtTime(p.endTime)}
                     </span>
                   </li>
                 ))}

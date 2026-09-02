@@ -19,10 +19,13 @@ export const toMin = (t: string) => {
   return h * 60 + m;
 };
 
+// 12-hour clock (HH:MM AM/PM); tolerates raw Postgres "HH:MM:SS(.ffffff)" input.
 export const fmtTime = (t: string) => {
-  const [h, m] = t.split(":").map(Number);
-  const hh = h % 12 || 12;
-  return `${hh}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+  const [h, m] = t.split(":");
+  const hour = Number(h);
+  return `${String(hour % 12 || 12).padStart(2, "0")}:${m} ${
+    hour >= 12 ? "PM" : "AM"
+  }`;
 };
 
 export const dateStr = (d: Date) =>

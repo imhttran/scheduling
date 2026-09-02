@@ -405,8 +405,8 @@ export default function SchedulerCalendarPage() {
             >
               <form className="modal-form" onSubmit={submitAssign}>
                 <p className="section-hint">
-                  {assigning.date} · {assigning.startTime}–{assigning.endTime} ·{" "}
-                  {assigning.departmentName}
+                  {assigning.date} · {fmtTime(assigning.startTime)}–
+                  {fmtTime(assigning.endTime)} · {assigning.departmentName}
                 </p>
                 {eligibleStudents.length === 0 && (
                   <p className="section-hint">

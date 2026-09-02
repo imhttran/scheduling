@@ -13,6 +13,7 @@ import { PageFooter } from "@/components/PageFooter";
 import { PageTitle } from "@/components/PageTitle";
 import { MissRequestModal } from "@/components/MissRequestModal";
 import { DataGrid, type Column } from "@/components/DataGrid";
+import { fmtTime } from "@/components/WeekCalendar";
 import { usePager, useSortablePage } from "@/lib/pagination";
 import type { Preference, Request, Shift } from "@/lib/types";
 
@@ -148,14 +149,24 @@ export default function StudentPage() {
   const preferencesGrid = usePager<Preference>(preferences);
   const prefColumns: Column<Preference>[] = [
     { key: "dayOfWeek", label: "Day", render: (p) => DAYS[p.dayOfWeek] },
-    { key: "startTime", label: "Start" },
-    { key: "endTime", label: "End" },
+    { key: "startTime", label: "Start", render: (p) => fmtTime(p.startTime) },
+    { key: "endTime", label: "End", render: (p) => fmtTime(p.endTime) },
   ];
 
   const shiftColumns = (action: (s: Shift) => ReactNode): Column<Shift>[] => [
     { key: "date", label: "Date", sortable: true },
-    { key: "startTime", label: "Start", sortable: true },
-    { key: "endTime", label: "End", sortable: true },
+    {
+      key: "startTime",
+      label: "Start",
+      sortable: true,
+      render: (s) => fmtTime(s.startTime),
+    },
+    {
+      key: "endTime",
+      label: "End",
+      sortable: true,
+      render: (s) => fmtTime(s.endTime),
+    },
     { key: "departmentName", label: "Department", sortable: true },
     { label: "", render: action },
   ];
@@ -172,8 +183,18 @@ export default function StudentPage() {
   ));
   const requestColumns: Column<Request>[] = [
     { key: "date", label: "Date", sortable: true },
-    { key: "startTime", label: "Start", sortable: true },
-    { key: "endTime", label: "End", sortable: true },
+    {
+      key: "startTime",
+      label: "Start",
+      sortable: true,
+      render: (r) => fmtTime(r.startTime),
+    },
+    {
+      key: "endTime",
+      label: "End",
+      sortable: true,
+      render: (r) => fmtTime(r.endTime),
+    },
     { key: "type", label: "Type", sortable: true },
     { key: "status", label: "Status", sortable: true },
     { key: "reason", label: "Reason", sortable: true },

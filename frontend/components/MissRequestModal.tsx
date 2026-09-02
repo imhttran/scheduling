@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { Modal } from "./Modal";
+import { fmtTime } from "./WeekCalendar";
 
 const CANNED_REASONS = [
   "Class conflict",
@@ -19,7 +20,12 @@ export function MissRequestModal({
   onClose,
   onSubmit,
 }: {
-  shift: { id: number; date: string; startTime: string; endTime: string } | null;
+  shift: {
+    id: number;
+    date: string;
+    startTime: string;
+    endTime: string;
+  } | null;
   onClose: () => void;
   onSubmit: (reason: string) => void;
 }) {
@@ -38,7 +44,7 @@ export function MissRequestModal({
     <Modal title="Request to miss shift" onClose={onClose}>
       <form className="modal-form" onSubmit={submit}>
         <p className="section-hint">
-          {shift.date} · {shift.startTime}–{shift.endTime}
+          {shift.date} · {fmtTime(shift.startTime)}–{fmtTime(shift.endTime)}
         </p>
         <label className="modal-label">
           Reason
