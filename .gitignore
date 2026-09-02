@@ -6,3 +6,5 @@ node_modules/
 .claude/
 .github/
 research/
+scripts/demo/out/
+scripts/demo/.venv/
