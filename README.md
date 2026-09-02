@@ -127,6 +127,21 @@ Stop the containers (`make docker-down`) and use `./manage.sh` as before. The
 two workflows share the same codebase and can coexist because Docker uses
 different ports.
 
+## Demo video
+
+`HTT-Scheduling-Demo.mp4` at the project root is built from the live app by
+`scripts/demo/`:
+
+1. `node scripts/demo/reset-demo.mjs` — resets demo-mutated state via the API
+   and re-adds the prep data (safe to re-run; no database reset needed)
+2. `node scripts/demo/record.mjs` — records the nine scenes (signup, login +
+   2FA, student, full-time/hourly staff, admin + RBAC, onboarding, department
+   manager, scheduler, audit) with the app running on :3000
+3. `./scripts/demo/build.sh` — narration (neural TTS, warm American male
+   voice), watermark, title cards, and the final concat
+
+Narration text lives in `scripts/demo/narration.txt` (one line per scene).
+
 ## Docs
 
 - **[docs/FEATURE.md](docs/FEATURE.md)** — what this build does

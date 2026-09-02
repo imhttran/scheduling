@@ -1,0 +1,40 @@
+# For builds from the repository root. The compose services keep their own
+# ignores in backend/.dockerignore and frontend/.dockerignore.
+.git
+.gitignore
+.env
+.env.docker
+.env.local
+.env.dev
+.env.example
+*.md
+.DS_Store
+.vscode
+.idea
+*.log
+*.pid
+*.out
+
+# Root tooling and app artifacts that never belong in an image
+node_modules
+frontend/node_modules
+frontend/.next
+backend/app
+HTT-Scheduling-Demo.mp4
+HTT-Scheduling-Demo.webm
+
+# Demo recording tooling and its outputs
+scripts/demo/.venv
+scripts/demo/out
+
+# Agent/editor scratch dirs
+.agent
+.claude
+.playwright-mcp
+.github
+research
+docs
+brand
+backend/.ndemo
+backend/app
+backend/coverage.out

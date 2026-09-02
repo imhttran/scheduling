@@ -38,11 +38,15 @@ tts() { # $1 = out wav, $2 = text
 
 min_of() {
   case "$1" in
-    01) echo 19 ;;
+    01) echo 15 ;;
     02) echo 24 ;;
-    03) echo 27 ;;
-    04) echo 22 ;;
-    05) echo 30 ;;
+    03) echo 34 ;;
+    04) echo 27 ;;
+    05) echo 46 ;;
+    06) echo 27 ;;
+    07) echo 35 ;;
+    08) echo 41 ;;
+    09) echo 23 ;;
     *)  echo 0  ;;
   esac
 }
@@ -58,11 +62,14 @@ done < narration.txt
 # ---------- 2. screen scenes ----------
 make_scene() { # $1 = scene number, $2 = webm
   local nn=$1 src=$2
-  local d t m
+  local d t m s
   d=$(dur "$OUT/audio/$nn.wav")
   m=$(min_of "$nn")
-  t=$(awk -v d="$d" -v m="$m" 'BEGIN { t = 2.4 + d; if (t < m) t = m; printf "%.2f", t }')
-  echo "  scene $nn: vo=${d}s target=${t}s"
+  s=$(dur "$src")
+  # Never shorter than the narration, the scene minimum, or the actual
+  # recording — trimming would cut the final on-camera actions.
+  t=$(awk -v d="$d" -v m="$m" -v s="$s" 'BEGIN { t = 2.4 + d; if (t < m) t = m; if (t < s + 0.4) t = s + 0.4; printf "%.2f", t }')
+  echo "  scene $nn: vo=${d}s rec=${s}s target=${t}s"
   LOGO="$OUT/shots/logo-badge.png"
   ffmpeg -y -hide_banner -loglevel error \
     -i "$src" -loop 1 -framerate 30 -i "$LOGO" -i "$OUT/audio/$nn.wav" \
@@ -93,15 +100,19 @@ echo "== brand assets =="
 node render-cards.mjs
 
 echo "== assemble scenes =="
-make_scene 01 "$OUT/video/01-login.webm"
-make_scene 02 "$OUT/video/02-student.webm"
-make_scene 03 "$OUT/video/03-manager.webm"
-make_scene 04 "$OUT/video/04-scheduler.webm"
+make_scene 01 "$OUT/video/01-signup.webm"
+make_scene 02 "$OUT/video/02-login.webm"
+make_scene 03 "$OUT/video/03-student.webm"
+make_scene 04 "$OUT/video/04-workers.webm"
 make_scene 05 "$OUT/video/05-admin.webm"
+make_scene 06 "$OUT/video/06-onboard.webm"
+make_scene 07 "$OUT/video/07-manager.webm"
+make_scene 08 "$OUT/video/08-scheduler.webm"
+make_scene 09 "$OUT/video/09-audit.webm"
 
 echo "== title cards =="
 make_card 00 "$OUT/shots/card-title.png"
-make_card 06 "$OUT/shots/card-outro.png"
+make_card 10 "$OUT/shots/card-outro.png"
 
 # ---------- 4. concat ----------
 echo "== concat =="
