@@ -4,7 +4,7 @@ Full-stack auth template: **Next.js → Go API → PostgreSQL**. The browser onl
 ever talks to Next.js; the Go API is proxied server-side and never exposed
 directly.
 
-▶ **[Watch the demo](Scheduling-Demo-compact.mp4)** — signup, login + 2FA, student,
+▶ **[Watch the demo](Scheduling-Demo-compact.webm)** — signup, login + 2FA, student,
 staff, manager, admin + RBAC, onboarding, scheduler, and audit.
 
 ```
@@ -130,7 +130,7 @@ different ports.
 
 ## Demo video
 
-`Scheduling-Demo-compact.mp4` (committed here) is a compressed re-encode of the
+`Scheduling-Demo-compact.webm` (committed here) is a compressed re-encode of the
 full-res `Scheduling-Demo.mp4`, which is built from the live app by
 `scripts/demo/`:
 
