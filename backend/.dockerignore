@@ -1,7 +1,10 @@
 .git
 .gitignore
 .env
+.env.*
 .env.local
+.env.docker
+.env.dev
 *.md
 .DS_Store
 .vscode
@@ -9,4 +12,15 @@
 *.log
 *.out
 coverage.out
+coverage.*
 backend.pid
+*.pid
+*.test
+
+# Compiled binary (rebuilt inside the image)
+app
+
+# Local tooling artifacts (browser profiles may hold session cookies)
+.ndemo
+
+# Keep: seed/ — the container seeds the database from it on boot.
